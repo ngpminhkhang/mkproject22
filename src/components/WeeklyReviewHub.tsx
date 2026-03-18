@@ -129,7 +129,7 @@ export default function WeeklyReviewHub({ accountId }: { accountId: number }) {
         }
       };
 
-      const res = await fetch("/api/review/save/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const res = await fetch("https://mk-project19-1.onrender.com/api/review/save/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       if(!res.ok) throw new Error("API Save Error");
       toast.success("Performance Data Synchronized!");
     } catch (e) { toast.error("Sync error: " + e); }
@@ -162,11 +162,11 @@ export default function WeeklyReviewHub({ accountId }: { accountId: number }) {
     try {
       if (editingItem && editingItem.source_type === 'scenario') {
         const payload = { input: { uuid: editingItem.uuid, analysis: missedForm.notes, images: missedForm.image_paths } };
-        await fetch("/api/scenarios/update/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+        await fetch("https://mk-project19-1.onrender.com/api/scenarios/update/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
         toast.success("Scenario Notes Updated!");
       } else {
         const payload = { uuid: editingItem ? editingItem.uuid : null, accountId, weekStart: currentWeek, pair: missedForm.pair, direction: missedForm.direction, reason: missedForm.reason, notes: missedForm.notes, images: missedForm.image_paths };
-        await fetch("/api/review/missed/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+        await fetch("https://mk-project19-1.onrender.com/api/review/missed/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
         toast.success("Manual Entry Logged!");
       }
       setShowMissedForm(false); setEditingItem(null); 
@@ -179,9 +179,9 @@ export default function WeeklyReviewHub({ accountId }: { accountId: number }) {
     if (!confirm("Confirm deletion?")) return; 
     try {
       if (item.source_type === 'scenario') {
-        await fetch("/api/scenarios/delete/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uuid: item.uuid }) });
+        await fetch("https://mk-project19-1.onrender.com/api/scenarios/delete/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uuid: item.uuid }) });
       } else {
-        await fetch("/api/review/missed/", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uuid: item.uuid }) });
+        await fetch("https://mk-project19-1.onrender.com/api/review/missed/", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uuid: item.uuid }) });
       }
       toast.success("Deleted"); loadWeeklyData(); 
     } catch(e) { toast.error(String(e)); }

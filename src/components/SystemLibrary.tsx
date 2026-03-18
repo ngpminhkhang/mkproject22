@@ -20,7 +20,7 @@ export default function Library() {
   const loadItems = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/library/");
+      const res = await fetch("https://mk-project19-1.onrender.com/api/library/");
       if (res.ok) setItems(await res.json());
     } catch (e) { toast.error("Kẹt mạng!"); }
     setLoading(false);
@@ -31,7 +31,7 @@ export default function Library() {
   const handleSave = async () => {
     if (!editingItem?.title || !editingItem?.category) return toast.error("Điền đủ tên và loại vũ khí!");
     try {
-      const res = await fetch("/api/library/", {
+      const res = await fetch("https://mk-project19-1.onrender.com/api/library/", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(editingItem)
       });
@@ -49,7 +49,7 @@ export default function Library() {
   const handleDelete = async (id: number) => {
     if (!confirm("Xóa vĩnh viễn món đồ chơi này?")) return;
     try {
-      await fetch("/api/library/", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+      await fetch("https://mk-project19-1.onrender.com/api/library/", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
       toast.success("Đã ném vào thùng rác!"); loadItems();
     } catch (e) { toast.error("Lỗi API!"); }
   };

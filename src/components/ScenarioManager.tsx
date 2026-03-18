@@ -282,7 +282,7 @@ export default function ScenarioManager({ accountId, prefillData, onClearPrefill
     if (!uuid) {
       try {
         const payload = { input: { ...form, outlook_id: outlookId, account_id: accountId } };
-        const res = await fetch("/api/scenarios/create/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+        const res = await fetch("https://mk-project19-1.onrender.com/api/scenarios/create/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
         if(!res.ok) throw new Error("API Failure");
         const data = await res.json(); uuid = data.uuid;
       } catch (e) { return toast.error("Initialization failure: " + e); }
@@ -300,7 +300,7 @@ export default function ScenarioManager({ accountId, prefillData, onClearPrefill
           narrative: context.narrative, scenario_type: scenarioType
         }
       };
-      await fetch("/api/scenarios/update/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updatePayload) });
+      await fetch("https://mk-project19-1.onrender.com/api/scenarios/update/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updatePayload) });
       setActiveScenarioId(uuid); toast.success("Quantitative Scenario Stored."); loadInitialData();
       if (andExecute && uuid) triggerExecution({ ...form, uuid });
     } catch (e) { toast.error("Backend Error: " + e); }
@@ -311,7 +311,7 @@ export default function ScenarioManager({ accountId, prefillData, onClearPrefill
     if (!confirm(`CONFIRM ORDER EXECUTION?\n${scenarioData.direction} ${scenarioData.pair} @ ${priceText}\nSize: ${scenarioData.volume} Lots`)) return;
     try {
       const type = orderType === "MARKET" ? (scenarioData.direction === "BUY" ? "ORDER_TYPE_BUY" : "ORDER_TYPE_SELL") : `${scenarioData.direction}_${orderType}`;
-      const res = await fetch("/api/scenarios/execute/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scenarioUuid: scenarioData.uuid, orderType: type }) });
+      const res = await fetch("https://mk-project19-1.onrender.com/api/scenarios/execute/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scenarioUuid: scenarioData.uuid, orderType: type }) });
       if(!res.ok) throw new Error("Execution engine rejection");
       const data = await res.json();
       toast.success("SENT: " + data.message); loadInitialData();
@@ -322,7 +322,7 @@ export default function ScenarioManager({ accountId, prefillData, onClearPrefill
     e.stopPropagation();
     const reason = prompt(`Reason for ${status}?`, "");
     if (reason !== null) {
-      await fetch("/api/scenarios/status/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uuid, status }) });
+      await fetch("https://mk-project19-1.onrender.com/api/scenarios/status/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uuid, status }) });
       toast.success(`Status updated to ${status}`); loadInitialData();
     }
   };
@@ -330,7 +330,7 @@ export default function ScenarioManager({ accountId, prefillData, onClearPrefill
   const handleDelete = async (uuid: string, e: any) => {
     e.stopPropagation();
     if (confirm("Permanently delete this scenario?")) {
-      await fetch("/api/scenarios/delete/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uuid }) });
+      await fetch("https://mk-project19-1.onrender.com/api/scenarios/delete/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uuid }) });
       toast.success("Deleted."); loadInitialData();
       if (activeScenarioId === uuid) clearForm();
     }

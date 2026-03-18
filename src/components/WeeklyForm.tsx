@@ -74,7 +74,7 @@ export default function WeeklyForm({ accountId = 1, onSendToScenario }: { accoun
     };
 
     try {
-      const res = await fetch("/api/outlook/", {
+      const res = await fetch("https://mk-project19-1.onrender.com/api/outlook/", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });

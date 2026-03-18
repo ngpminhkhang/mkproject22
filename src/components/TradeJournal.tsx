@@ -137,7 +137,7 @@ export default function TradeJournal({ accountId }: { accountId: number }) {
         pnl: editPnL
       };
 
-      const res = await fetch("/api/journal/update/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const res = await fetch("https://mk-project19-1.onrender.com/api/journal/update/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       if (!res.ok) throw new Error("Synchronization Error");
       toast.success(`Ledger Synchronized. Adjusted PnL: $${editPnL}`);
       loadData();

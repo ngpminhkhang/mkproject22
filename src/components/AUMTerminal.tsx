@@ -20,7 +20,7 @@ export default function AUMTerminal() {
 
   const loadData = async () => {
     try {
-      const res = await fetch("/api/portfolio/metrics/");
+      const res = await fetch("https://mk-project19-1.onrender.com/api/portfolio/metrics/");
       if (!res.ok) throw new Error("API Endpoint Disconnected");
       const data = await res.json();
       setMetrics(data);
@@ -36,7 +36,7 @@ export default function AUMTerminal() {
   const changeMode = async (newMode: string) => {
     if (!confirm(`Confirm system-wide transition to mode: ${newMode}?`)) return;
     try {
-      const res = await fetch("/api/portfolio/mode/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: newMode }) });
+      const res = await fetch("https://mk-project19-1.onrender.com/api/portfolio/mode/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: newMode }) });
       if (!res.ok) throw new Error("API Update Failure");
       toast.success(`System Mode switched to ${newMode}`);
       loadData();
@@ -52,7 +52,7 @@ export default function AUMTerminal() {
   const handleApplyRebalance = async () => {
     try {
       const payload = draftAllocations.map(acc => ({ account_id: acc.id, weight_percent: Number(acc.allocation_percent), status: acc.status }));
-      const res = await fetch("/api/portfolio/rebalance/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ payload }) });
+      const res = await fetch("https://mk-project19-1.onrender.com/api/portfolio/rebalance/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ payload }) });
       if (!res.ok) throw new Error("Reallocation Protocol Failed");
       toast.success("REBALANCE EXECUTED: Capital allocation updated.");
       setIsRebalancing(false); loadData();
@@ -62,7 +62,7 @@ export default function AUMTerminal() {
   const handleInspectAnalytics = async (acc: PortfolioAccount) => {
     setInspectingAccount(acc); setAnalyticsData(null);
     try {
-      const res = await fetch("/api/portfolio/analytics/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: acc.id }) });
+      const res = await fetch("https://mk-project19-1.onrender.com/api/portfolio/analytics/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: acc.id }) });
       if (!res.ok) throw new Error("Analytics Retrieval Failed");
       const data = await res.json(); setAnalyticsData(data);
     } catch (e: any) { toast.error("Inspection Error: " + e.message); }

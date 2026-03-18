@@ -20,7 +20,7 @@ export default function Config({ accountId }: { accountId: number }) {
 
   const handleSave = async () => {
     try {
-      const res = await fetch("/api/config/state/", {
+      const res = await fetch("https://mk-project19-1.onrender.com/api/config/state/", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ accountId, ...config })
       });
@@ -34,7 +34,7 @@ export default function Config({ accountId }: { accountId: number }) {
     const val = prompt("Risk Parameter / Fraction (e.g., 2.0 or 0.5):");
     if (!title || !val) return;
     
-    await fetch("/api/library/", {
+    await fetch("https://mk-project19-1.onrender.com/api/library/", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title, category: "RISK_MODEL", configuration: JSON.stringify({ type: "PERCENT", value: parseFloat(val) }) })
     });
@@ -44,7 +44,7 @@ export default function Config({ accountId }: { accountId: number }) {
 
   const deleteRiskModel = async (id: number) => {
     if(!confirm("Terminate this Risk Profile?")) return;
-    await fetch("/api/library/", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+    await fetch("https://mk-project19-1.onrender.com/api/library/", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
     loadData();
   };
 

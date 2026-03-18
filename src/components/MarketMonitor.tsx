@@ -24,7 +24,7 @@ export default function MarketMonitor({ onTradeNow }: { onTradeNow: (data: any) 
 
   const fetchData = async () => {
     try {
-      const resSig = await fetch("/api/monitor/signals/");
+      const resSig = await fetch("https://mk-project19-1.onrender.com/api/monitor/signals/");
       if (resSig.ok) {
         const liveSignals: MarketSignal[] = await resSig.json();
         setCards(prevCards => prevCards.map(card => {
@@ -34,7 +34,7 @@ export default function MarketMonitor({ onTradeNow }: { onTradeNow: (data: any) 
         }));
       }
       
-      const resAct = await fetch("/api/monitor/active/");
+      const resAct = await fetch("https://mk-project19-1.onrender.com/api/monitor/active/");
       if (resAct.ok) {
         const liveTrades: ActiveTrade[] = await resAct.json();
         setActiveTrades(liveTrades);
@@ -56,7 +56,7 @@ export default function MarketMonitor({ onTradeNow }: { onTradeNow: (data: any) 
   const handleKillSwitch = async (uuid: string, pair: string) => {
     if (!confirm(`Initiate emergency liquidation for ${pair}?`)) return;
     try {
-      const res = await fetch("/api/monitor/kill/", {
+      const res = await fetch("https://mk-project19-1.onrender.com/api/monitor/kill/", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ uuid })
       });
