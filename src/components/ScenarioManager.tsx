@@ -126,14 +126,14 @@ export default function ScenarioManager({ accountId, prefillData, onClearPrefill
   const loadInitialData = async () => {
     try {
       const [sRes, sLib, eLib, risksStr, settStr, typesStr, tagsStr, ceoStateStr] = await Promise.all([
-        fetch(`/api/scenarios/?accountId=${accountId}`).then(r => r.json()),
-        fetch('/api/library/?category=SETUP').then(r => r.json()),
-        fetch('/api/library/?category=EXIT_STRAT').then(r => r.json()),
-        fetch('/api/library/?category=RISK_MODEL').then(r => r.json()),
-        fetch(`/api/settings/?accountId=${accountId}`).then(r => r.json()),
-        fetch('/api/library/?category=SCENARIO_TYPE').then(r => r.json()),
-        fetch('/api/library/?category=CONTEXT_TAG').then(r => r.json()),
-        fetch(`/api/portfolio/state/?accountId=${accountId}`).then(r => r.json())
+        fetch(`https://mk-project19-1.onrender.com/api/scenarios/?accountId=${accountId}`).then(r => r.json()),
+        fetch('https://mk-project19-1.onrender.com/api/library/?category=SETUP').then(r => r.json()),
+        fetch('https://mk-project19-1.onrender.com/api/library/?category=EXIT_STRAT').then(r => r.json()),
+        fetch('https://mk-project19-1.onrender.com/api/library/?category=RISK_MODEL').then(r => r.json()),
+        fetch(`https://mk-project19-1.onrender.com/api/settings/?accountId=${accountId}`).then(r => r.json()),
+        fetch('https://mk-project19-1.onrender.com/api/library/?category=SCENARIO_TYPE').then(r => r.json()),
+        fetch('https://mk-project19-1.onrender.com/api/library/?category=CONTEXT_TAG').then(r => r.json()),
+        fetch(`https://mk-project19-1.onrender.com/api/portfolio/state/?accountId=${accountId}`).then(r => r.json())
       ]);
       setScenarios(sRes);
       setSetupLibrary(sLib);

@@ -23,7 +23,7 @@ export default function Dashboard({ accountId }: { accountId: number }) {
   useEffect(() => {
     const fetchMetrics = async () => {
       try {
-        const res = await fetch(`/api/dashboard/metrics/?accountId=${accountId}`);
+        const res = await fetch(`https://mk-project19-1.onrender.com/api/dashboard/metrics/?accountId=${accountId}`);
         if (res.ok) setMetrics(await res.json());
       } catch (e) {
         toast.error("Connection to Quant Server failed.");

@@ -58,10 +58,10 @@ export default function WeeklyReviewHub({ accountId }: { accountId: number }) {
     setIsLoading(true);
     try {
       const [allScenariosRes, setupsRes, reviewDataRes, missedDataRes] = await Promise.all([
-        fetch(`/api/journal/trades/?accountId=${accountId}&outcome=ALL`).then(r => r.json()),
-        fetch('/api/library/?category=SETUP').then(r => r.json()),
-        fetch(`/api/review/data/?accountId=${accountId}&weekStart=${currentWeek}`).then(r => r.json()),
-        fetch(`/api/review/missed/?accountId=${accountId}&weekStart=${currentWeek}`).then(r => r.json())
+        fetch(`https://mk-project19-1.onrender.com/api/journal/trades/?accountId=${accountId}&outcome=ALL`).then(r => r.json()),
+        fetch('https://mk-project19-1.onrender.com/api/library/?category=SETUP').then(r => r.json()),
+        fetch(`https://mk-project19-1.onrender.com/api/review/data/?accountId=${accountId}&weekStart=${currentWeek}`).then(r => r.json()),
+        fetch(`https://mk-project19-1.onrender.com/api/review/missed/?accountId=${accountId}&weekStart=${currentWeek}`).then(r => r.json())
       ]);
 
       const allScenarios = Array.isArray(allScenariosRes) ? allScenariosRes : [];

@@ -31,7 +31,7 @@ export default function WeeklyForm({ accountId = 1, onSendToScenario }: { accoun
 
   const loadData = async () => {
     try {
-      const res = await fetch(`/api/outlook/?accountId=${accountId}&weekStart=${currentWeek}`);
+      const res = await fetch(`https://mk-project19-1.onrender.com/api/outlook/?accountId=${accountId}&weekStart=${currentWeek}`);
       if (!res.ok) return;
       const data = await res.json();
       

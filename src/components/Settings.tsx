@@ -8,10 +8,10 @@ export default function Config({ accountId }: { accountId: number }) {
 
   const loadData = async () => {
     try {
-      const res = await fetch(`/api/config/state/?accountId=${accountId}`);
+      const res = await fetch(`https://mk-project19-1.onrender.com/api/config/state/?accountId=${accountId}`);
       if (res.ok) setConfig(await res.json());
 
-      const libRes = await fetch(`/api/library/?category=RISK_MODEL`);
+      const libRes = await fetch(`https://mk-project19-1.onrender.com/api/library/?category=RISK_MODEL`);
       if (libRes.ok) setRiskModels(await libRes.json());
     } catch (e) { toast.error("Connection Interrupted!"); }
   };

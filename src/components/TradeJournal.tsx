@@ -87,7 +87,7 @@ export default function TradeJournal({ accountId }: { accountId: number }) {
     setLoading(true);
     try {
       const qs = `?accountId=${accountId}&outcome=${filterOutcome}&pair=${filterPair}&dateFrom=${dateFrom}&dateTo=${dateTo}`;
-      const res = await fetch(`/api/journal/trades/${qs}`);
+      const res = await fetch(`https://mk-project19-1.onrender.com/api/journal/trades/${qs}`);
       if (!res.ok) throw new Error("Data stream interrupted");
       const rawList = await res.json();
       if (Array.isArray(rawList)) {
