@@ -12,7 +12,7 @@ interface RiskProfile { id: number; title: string; configuration: string; }
 interface ScenarioInput { pair: string; direction: "BUY" | "SELL"; entry_price: number; sl_price: number; tp_price: number; volume: number; outlook_id?: string; account_id?: number; }
 interface ScenarioExtended extends ScenarioInput { uuid: string; status: string; pnl?: number; analysis_details?: string; pre_trade_checklist?: string; risk_data?: string; images?: string; result_images?: string; setup_id?: number | null; created_at?: number; htf_trend?: string; market_phase?: string; dealing_range?: string; narrative?: string; scenario_type?: string; execution_score?: number; }
 interface ScenarioManagerProps { accountId: number; prefillData?: any; onClearPrefill?: () => void; }
-const [radarTicketId, setRadarTicketId] = useState<number | null>(null);
+
 const ALL_PAIRS = ["XAUUSD", "BITCOIN", "US30", "NAS100", "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD", "EURJPY", "GBPJPY"];
 const DEFAULT_TAGS = ["CPI", "NFP", "FOMC", "PPI", "GDP", "Monday", "Friday", "EOW", "London_Open", "NY_Open", "Asia_Range", "Expansion", "Retracement", "Reversal", "Consolidation", "Risk_On", "Risk_Off", "Holiday"];
 
@@ -122,6 +122,7 @@ export default function ScenarioManager({ accountId, prefillData, onClearPrefill
   const [isManualVolume, setIsManualVolume] = useState(false);
   const [isAddingExit, setIsAddingExit] = useState(false);
   const [isAddingTag, setIsAddingTag] = useState(false);
+  const [radarTicketId, setRadarTicketId] = useState<number | null>(null);
 
   const loadInitialData = async () => {
     try {
