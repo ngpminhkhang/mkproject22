@@ -12,7 +12,7 @@ interface RiskProfile { id: number; title: string; configuration: string; }
 interface ScenarioInput { pair: string; direction: "BUY" | "SELL"; entry_price: number; sl_price: number; tp_price: number; volume: number; outlook_id?: string; account_id?: number; }
 interface ScenarioExtended extends ScenarioInput { uuid: string; status: string; pnl?: number; analysis_details?: string; pre_trade_checklist?: string; risk_data?: string; images?: string; result_images?: string; setup_id?: number | null; created_at?: number; htf_trend?: string; market_phase?: string; dealing_range?: string; narrative?: string; scenario_type?: string; execution_score?: number; }
 interface ScenarioManagerProps { accountId: number; prefillData?: any; onClearPrefill?: () => void; }
-
+const [radarTicketId, setRadarTicketId] = useState<number | null>(null);
 const ALL_PAIRS = ["XAUUSD", "BITCOIN", "US30", "NAS100", "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD", "EURJPY", "GBPJPY"];
 const DEFAULT_TAGS = ["CPI", "NFP", "FOMC", "PPI", "GDP", "Monday", "Friday", "EOW", "London_Open", "NY_Open", "Asia_Range", "Expansion", "Retracement", "Reversal", "Consolidation", "Risk_On", "Risk_Off", "Holiday"];
 
@@ -158,14 +158,15 @@ export default function ScenarioManager({ accountId, prefillData, onClearPrefill
 
   useEffect(() => {
     if (prefillData) {
-      clearForm();
-      setForm(prev => ({ ...prev, pair: prefillData.pair, direction: prefillData.direction }));
-      setContext(prev => ({ ...prev, narrative: `[SIGNAL] ${prefillData.reason || 'Quick Trade'}\nTags: ${prefillData.tags?.join(", ") || ""}` }));
-      setExpandedSection("EXEC");
-      toast.success(`Signal Alert: ${prefillData.pair} (${prefillData.direction})`);
-      if (onClearPrefill) onClearPrefill();
+        clearForm();
+        setForm(prev => ({ ...prev, pair: prefillData.pair, direction: prefillData.direction }));
+        // LƯU LẠI MÃ VÉ ĐỂ TÍ NỮA XẾP DUYỆT!
+        if (prefillData.ticket_id) setRadarTicketId(prefillData.ticket_id);
     }
-  }, [prefillData]);
+    setExpandedSection("EXEC");
+    toast.success(`Dịch chuyển: ${prefillData?.pair}`);
+    if (onClearPrefill) onClearPrefill();
+}, [prefillData]);
 
   const totalSignalScore = useMemo(() => Object.values(signalScores).reduce((sum, val) => sum + val, 0), [signalScores]);
 
@@ -266,7 +267,7 @@ export default function ScenarioManager({ accountId, prefillData, onClearPrefill
   };
 
   const handleSave = async (andExecute = false) => {
-    if (andExecute && !isExitValid) return toast.error("Exit Strategy is mandatory for execution.");
+    
     if (form.entry_price === 0) return toast.error("Valid price parameters required for calculation.");
     
     let uuid = activeScenarioId;
@@ -307,16 +308,29 @@ export default function ScenarioManager({ accountId, prefillData, onClearPrefill
   };
 
   const triggerExecution = async (scenarioData: any) => {
-    const priceText = orderType === "MARKET" ? "MARKET PRICE" : scenarioData.entry_price;
-    if (!confirm(`CONFIRM ORDER EXECUTION?\n${scenarioData.direction} ${scenarioData.pair} @ ${priceText}\nSize: ${scenarioData.volume} Lots`)) return;
+    if (!confirm(`TỔNG TƯ LỆNH XÁC NHẬN KHAI HỎA?\n${scenarioData.direction} ${scenarioData.pair}\nKhối lượng: ${scenarioData.volume} Lots`)) return;
+
     try {
-      const type = orderType === "MARKET" ? (scenarioData.direction === "BUY" ? "ORDER_TYPE_BUY" : "ORDER_TYPE_SELL") : `${scenarioData.direction}_${orderType}`;
-      const res = await fetch("https://mk-project19-1.onrender.com/api/scenarios/execute/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scenarioUuid: scenarioData.uuid, orderType: type }) });
-      if(!res.ok) throw new Error("Execution engine rejection");
-      const data = await res.json();
-      toast.success("SENT: " + data.message); loadInitialData();
-    } catch (e) { toast.error(String(e), { duration: 6000, style: { background: '#ef4444', color: 'white', fontWeight: 'bold' } }); }
-  };
+        // Cắm ống truyền dịch thẳng vào cổng API MT5
+        const res = await fetch("https://mk-project19-1.onrender.com/api/mt5/approve/", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+                ticket_id: radarTicketId, // Bắn đúng cái vé sếp đang xem
+                approved_lot: scenarioData.volume 
+            })
+        });
+
+        if (!res.ok) throw new Error("Cổng phê duyệt sập!");
+        toast.success("ĐÃ ĐÓNG DẤU TRIỆN! LÍNH ĐÁNH THUÊ ĐANG LÊN ĐẠN!");
+        
+        // Bắn xong thì xé vé
+        setRadarTicketId(null);
+        loadInitialData();
+    } catch (e) {
+        toast.error("Lỗi bo mạch: " + e);
+    }
+};
 
   const handleMarkStatus = async (uuid: string, status: "MISSED" | "CANCELLED", e: any) => {
     e.stopPropagation();
