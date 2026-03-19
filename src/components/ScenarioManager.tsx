@@ -172,6 +172,15 @@ export default function ScenarioManager({ accountId, prefillData, onClearPrefill
   const totalSignalScore = useMemo(() => Object.values(signalScores).reduce((sum, val) => sum + val, 0), [signalScores]);
 
   const riskCalc = useMemo(() => {
+    if (orderType === "MARKET") {
+        const panicRisk = accountBalance * 0.02; // Khóa cứng 2% vốn
+        return { 
+            safeLots: 999, // Mở khóa trần Lot để sếp tự do nhập
+            riskAmt: panicRisk, 
+            rr: 0, 
+            riskDisplay: "PANIC OVERRIDE (MAX 2% RISK)" 
+        };
+    }
     if (!form.entry_price || !form.sl_price || form.entry_price === form.sl_price) return null;
     const dist = Math.abs(form.entry_price - form.sl_price);
     const multiplier = getMultiplier(form.pair);
@@ -544,16 +553,43 @@ export default function ScenarioManager({ accountId, prefillData, onClearPrefill
               )}
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '25px', marginBottom: '30px' }}>
-                <div style={{ flex: 1 }}>
-                  <label style={labelStyle}>Order Type</label>
-                  <select value={orderType} onChange={e => setOrderType(e.target.value as any)} style={inputStyle}>
-                    <option value="LIMIT">LIMIT</option><option value="STOP">STOP</option><option value="MARKET">MARKET</option>
-                  </select>
-                </div>
-                <PriceInput label={orderType === "MARKET" ? "EST. MARKET PRICE" : "TARGET ENTRY"} value={form.entry_price} onChange={(v: number) => setForm({ ...form, entry_price: v })} color="#2563eb" disabled={false} placeholder="Input entry vector..." />
-                <PriceInput label="INVALIDATION (SL)" value={form.sl_price} onChange={(v: number) => setForm({ ...form, sl_price: v })} color="#ef4444" disabled={false} />
-                <PriceInput label="TARGET (TP)" value={form.tp_price} onChange={(v: number) => setForm({ ...form, tp_price: v })} color="#10b981" disabled={false} />
-              </div>
+    <div style={{ flex: 1 }}>
+        <label style={labelStyle}>Order Type</label>
+        <select value={orderType} onChange={e => setOrderType(e.target.value as any)} style={inputStyle}>
+            <option value="LIMIT">LIMIT</option>
+            <option value="STOP">STOP</option>
+            <option value="MARKET">MARKET</option>
+        </select>
+    </div>
+    
+    {/* Ô Entry: Đóng băng khi chọn MARKET */}
+    <PriceInput 
+        label={orderType === "MARKET" ? "MARKET EXECUTION" : "TARGET ENTRY"} 
+        value={orderType === "MARKET" ? 0 : form.entry_price} 
+        onChange={(v: number) => setForm({ ...form, entry_price: v })} 
+        color="#2563eb" 
+        disabled={orderType === "MARKET"} 
+        placeholder={orderType === "MARKET" ? "Bỏ qua" : "Input entry vector..."} 
+    />
+    
+    {/* Ô SL: Chuyển thành Tùy chọn khi chọn MARKET */}
+    <PriceInput 
+        label={orderType === "MARKET" ? "SL (OPTIONAL)" : "INVALIDATION (SL)"} 
+        value={form.sl_price} 
+        onChange={(v: number) => setForm({ ...form, sl_price: v })} 
+        color="#ef4444" 
+        disabled={false} 
+    />
+    
+    {/* Ô TP: Chuyển thành Tùy chọn khi chọn MARKET */}
+    <PriceInput 
+        label={orderType === "MARKET" ? "TP (OPTIONAL)" : "TARGET (TP)"} 
+        value={form.tp_price} 
+        onChange={(v: number) => setForm({ ...form, tp_price: v })} 
+        color="#10b981" 
+        disabled={false} 
+    />
+    </div>
 
               <div style={{ background: '#faf5ff', padding: '25px', borderRadius: '16px', border: '1px solid #f3e8ff', marginBottom: '30px', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
