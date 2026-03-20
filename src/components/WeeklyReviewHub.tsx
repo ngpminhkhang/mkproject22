@@ -156,62 +156,83 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
     };
 
     const handleSaveMissedNote = async () => {
-        if (!missedForm.pair || !missedForm.notes) return toast.error("Cần nhập Pair và Ghi chú!");
-        try {
-            const baseUrl = "https://mk-project19-1.onrender.com/api/scenarios";
+    if (!missedForm.pair || !missedForm.notes) return toast.error("Cần nhập Pair và Ghi chú!");
+    try {
+        const baseUrl = "https://mk-project19-1.onrender.com/api/scenarios";
+        
+        // Chuẩn bị dữ liệu: Ép kiểu tuyệt đối ở đây để dứt điểm lỗi double-stringify
+        // Gửi THẲNG object và mảng, KHÔNG JSON.stringify!
+        const commonData = {
+            analysis_details: { notes: missedForm.notes },
+            images: missedForm.image_paths
+        };
+        
+        if (editingMissedItem) {
+            const updatePayload = {
+                input: {
+                    uuid: editingMissedItem.uuid,
+                    ...commonData // correct: sending raw objects/arrays
+                }
+            };
             
-            if (editingMissedItem) {
-                // ĐÃ GỠ BỎ JSON.STRINGIFY - TRUYỀN RAW OBJECT/ARRAY
-                const updatePayload = {
-                    input: {
-                        uuid: editingMissedItem.uuid,
-                        analysis_details: { notes: missedForm.notes },
-                        images: missedForm.image_paths
-                    }
-                };
-                
-                await fetch(`${baseUrl}/update/`, {
-                    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updatePayload)
-                });
-            } else {
-                const createRes = await fetch(`${baseUrl}/create/`, {
-                    method: "POST", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        input: {
-                            pair: missedForm.pair, direction: missedForm.direction, outlook_id: `WEEK-${currentWeek}`,
-                            account_id: accountId, entry_price: 0, sl_price: 0, tp_price: 0, volume: 0
-                        }
-                    })
-                });
-                const createData = await createRes.json();
-                const newUuid = createData.uuid;
+            // Sếp kiểm tra trong console xem dữ liệu này có bị dính JSON.stringify không nhé
+            console.log("Saving existing missed item, sending raw data:", updatePayload);
+            
+            const res = await fetch(`${baseUrl}/update/`, {
+                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updatePayload)
+            });
+            const updateData = await res.json();
+            if (!res.ok) throw new Error(updateData.error);
+        } else {
+            // ... (creation steps)
+            const createPayload = {
+                input: {
+                    pair: missedForm.pair, direction: missedForm.direction, outlook_id: `WEEK-${currentWeek}`,
+                    account_id: accountId, entry_price: 0, sl_price: 0, tp_price: 0, volume: 0
+                }
+            };
+            const createRes = await fetch(`${baseUrl}/create/`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(createPayload)
+            });
+            const createData = await createRes.json();
+            if (!createRes.ok) throw new Error(createData.error);
+            const newUuid = createData.uuid;
 
-                await fetch(`${baseUrl}/status/`, {
-                    method: "POST", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ uuid: newUuid, status: missedForm.reason === 'CANCELLED' ? 'CANCELLED' : 'MISSED' })
-                });
+            // Update status
+            const statusRes = await fetch(`${baseUrl}/status/`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ uuid: newUuid, status: missedForm.reason === 'CANCELLED' ? 'CANCELLED' : 'MISSED' })
+            });
+            const statusData = await statusRes.json();
+            if (!statusRes.ok) throw new Error(statusData.error);
 
-                await fetch(`${baseUrl}/update/`, {
-                    method: "POST", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        input: { 
-                            uuid: newUuid, 
-                            // ĐÃ GỠ BỎ JSON.STRINGIFY - TRUYỀN RAW OBJECT/ARRAY
-                            analysis_details: { notes: missedForm.notes },
-                            images: missedForm.image_paths
-                        }
-                    })
-                });
-            }
+            // Update details
+            const updatePayload = {
+                input: { 
+                    uuid: newUuid, 
+                    ...commonData // correct: sending raw objects/arrays
+                }
+            };
+            console.log("Updating newly created missed item, sending raw data:", updatePayload);
 
-            toast.success("Đã cất cẩn thận!");
-            setShowMissedForm(false);
-            setEditingMissedItem(null);
-            await loadData();
-        } catch (e) {
-            toast.error("Lỗi cáp quang: " + e);
+            const res = await fetch(`${baseUrl}/update/`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(updatePayload)
+            });
+            const updateData = await res.json();
+            if (!res.ok) throw new Error(updateData.error);
         }
-    };
+
+        toast.success("Đã cất cẩn thận!");
+        setShowMissedForm(false);
+        setEditingMissedItem(null);
+        await loadData();
+    } catch (e) {
+        toast.error("Lỗi cáp quang: " + e);
+        console.error("Save missed item error:", e);
+    }
+};
 
     const handleDeleteMissed = async (uuid: string) => {
         if (!confirm("Sếp muốn phi tang hồ sơ này?")) return;
