@@ -105,11 +105,6 @@ const RiskField = ({ label, value, onChange, isOverRisk, color }: any) => (
     </div>
 );
 
-const MT5Thumbnail = ({ path }: { path: string }) => {
-    if (!path) return null;
-    return <img src={path} style={{ width: 40, height: 30, objectFit: 'cover', borderRadius: 4, border: '1px solid #e2e8f0', cursor: 'zoom-in' }} onError={(e) => e.currentTarget.style.display = 'none'} alt="thumb" />
-};
-
 export default function ScenarioManager({ accountId = 1, prefillData, onClearPrefill }: ScenarioManagerProps) {
     const [scenarios, setScenarios] = useState<ScenarioExtended[]>([]);
     const [setupLibrary, setSetupLibrary] = useState<LibraryItem[]>([]);
@@ -125,7 +120,7 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
     
     // === MACRO PIPELINE ===
     const [outlookData, setOutlookData] = useState({ sentiment: 'MIXED', bias: 'NEUTRAL' });
-    const [plannedPairs, setPlannedPairs] = useState<string[]>([]); // CHỨA CÁC NÚT BẤM QUICK-SELECT
+    const [plannedPairs, setPlannedPairs] = useState<string[]>([]); 
     const [myMood, setMyMood] = useState("FOCUSED");
 
     const [form, setForm] = useState<ScenarioInput>({ pair: "XAUUSD", direction: "BUY", entry_price: 0, sl_price: 0, tp_price: 0, volume: 0 });
@@ -138,7 +133,6 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
     const [selectedRiskProfileId, setSelectedRiskProfileId] = useState<string>("");
     const [orderType, setOrderType] = useState<"LIMIT" | "STOP" | "MARKET">("LIMIT");
     const [exitStrats, setExitStrats] = useState<string[]>([]);
-    const [images, setImages] = useState<string[]>([]);
     const [isManualVolume, setIsManualVolume] = useState(false);
     const [isAddingExit, setIsAddingExit] = useState(false);
     const [isAddingTag, setIsAddingTag] = useState(false);
@@ -169,7 +163,6 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
             if (!scenarioType && typesStr && typesStr.length > 0) setScenarioType(typesStr[0].title);
             if (Array.isArray(risksStr)) setRiskProfiles(risksStr.map((r: any) => ({ id: r.id, title: r.title, configuration: r.configuration || "{}" })));
             
-            // HÚT DỮ LIỆU TỪ OUTLOOK VÀ TẠO QUICK-SELECT CHIPS
             if (outRes && !outRes.error) {
                 setOutlookData({ sentiment: outRes.market_sentiment || 'MIXED', bias: outRes.weekly_bias || 'NEUTRAL' });
                 try {
@@ -189,21 +182,24 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
     useEffect(() => { loadInitialData(); }, [accountId]);
     useEffect(() => { const i = setInterval(() => { loadInitialData(); }, 5000); return () => clearInterval(i); }, []);
 
+    // FIX CHÍ TỬ 2: SỬA LỖI CHECKLIST BỊ RỖNG & TỰ KHÓA
     useEffect(() => {
-        if (selectedSetupId) {
-            const setup = setupLibrary.find(s => s.id === selectedSetupId);
-            if (setup && setup.configuration) {
-                try {
-                    const config = JSON.parse(setup.configuration);
-                    if (config.checklist_items && Array.isArray(config.checklist_items) && config.checklist_items.length > 0) {
-                        setDynamicChecklistItems(config.checklist_items);
-                    }
-                } catch (e) { console.error(e); }
-                if (!activeScenarioId) setChecklist({}); return;
-            }
-            setDynamicChecklistItems(["(Chưa có Checklist nào được link)"]);
-        } else { setDynamicChecklistItems(["Vui lòng chọn 'Main Model' để tải Checklist."]); }
-    }, [selectedSetupId, setupLibrary, activeScenarioId]);
+        if (!selectedSetupId) {
+            setDynamicChecklistItems([]);
+            return;
+        }
+        const setup = setupLibrary.find(s => Number(s.id) === Number(selectedSetupId));
+        if (setup && setup.configuration) {
+            try {
+                const config = JSON.parse(setup.configuration);
+                if (config.checklist_items && Array.isArray(config.checklist_items) && config.checklist_items.length > 0) {
+                    setDynamicChecklistItems(config.checklist_items);
+                    return;
+                }
+            } catch (e) { console.error("Parse config error", e); }
+        }
+        setDynamicChecklistItems([]);
+    }, [selectedSetupId, setupLibrary]);
 
     useEffect(() => {
         if (prefillData) {
@@ -218,20 +214,25 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
 
     const totalSignalScore = useMemo(() => Object.values(signalScores).reduce((sum, val) => sum + val, 0), [signalScores]);
 
-    // BỘ PHÁN XÉT TỬ THẦN
+    // FIX CHÍ TỬ 1: HỆ THỐNG PHÁN XÉT BỘI PHẢN CHUẨN XÁC
     const biasCheck = useMemo(() => {
-        if (!outlookData.bias || outlookData.bias.toUpperCase() === "NEUTRAL") return { status: "NO PLAN", color: "#64748b", text: "KHÔNG NẰM TRONG PLAN" };
-        const biasStr = outlookData.bias.toUpperCase();
-        if (!biasStr.includes(form.pair.toUpperCase())) return { status: "NO PLAN", color: "#64748b", text: "KHÔNG NẰM TRONG PLAN" };
+        if (plannedPairs.length === 0) return { status: "NO PLAN", color: "#64748b", text: "CHƯA CÓ PLAN (Đợi Sync từ Outlook)" };
 
-        const isBuyBias = biasStr.includes("BUY") || biasStr.includes("LONG") || biasStr.includes("BULLISH");
-        const isSellBias = biasStr.includes("SELL") || biasStr.includes("SHORT") || biasStr.includes("BEARISH");
+        // Dò xem cặp tiền hiện tại có nằm trong danh sách sếp đã chọn bên Outlook không
+        const planned = plannedPairs.find(p => p.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().startsWith(form.pair.toUpperCase()));
 
-        if ((form.direction === "BUY" && isSellBias) || (form.direction === "SELL" && isBuyBias)) {
+        if (!planned) return { status: "NO PLAN", color: "#64748b", text: "KHÔNG NẰM TRONG PLAN" };
+
+        const parts = planned.split('|');
+        const dir = parts.length > 1 ? parts[1] : "";
+        const planDir = (dir.toUpperCase() === 'BUY' || dir.toUpperCase() === 'LONG') ? 'BUY' : 'SELL';
+
+        if (form.direction !== planDir) {
             return { status: "VIOLATION", color: "#dc2626", text: "LỆNH BỘI PHẢN (Ngược Outlook)" };
         }
+
         return { status: "ALIGNED", color: "#16a34a", text: "MACRO ALIGNED" };
-    }, [form.pair, form.direction, outlookData.bias]);
+    }, [form.pair, form.direction, plannedPairs]);
 
     const riskCalc = useMemo(() => {
         if (orderType === "MARKET") {
@@ -274,7 +275,9 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
     }, [form, selectedRiskProfileId, accountBalance, riskProfiles, orderType, portfolioState, totalSignalScore]);
 
     const isOverRisk = riskCalc && form.volume > riskCalc.safeLots;
-    const hasChecklist = dynamicChecklistItems.length > 0 && !dynamicChecklistItems[0].startsWith("(");
+    
+    // LOGIC CHECKLIST MỚI: Chỉ tính điểm khi thực sự có checklist
+    const hasChecklist = dynamicChecklistItems.length > 0;
     const checklistScore = Object.values(checklist).filter(Boolean).length;
     const requiredTicks = hasChecklist ? Math.ceil(dynamicChecklistItems.length * 0.7) : 0;
     
@@ -481,11 +484,6 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
                             </select>
                         </div>
 
-                        <div style={{ textAlign: 'center', borderRight: '1px solid #e2e8f0', paddingRight: '20px' }}>
-                            <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Weekly Bias</div>
-                            <div style={{ fontSize: '16px', fontWeight: 900, color: '#d97706', textTransform: 'uppercase' }}>{outlookData.bias}</div>
-                        </div>
-
                         {/* === QUICK SELECT CHIPS (TỪ OUTLOOK) === */}
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                             {plannedPairs.map(p => {
@@ -512,7 +510,7 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
                 </div>
 
                 <div style={{ flex: 1, overflowY: 'auto' }}>
-                    {/* THANH CẢNH BÁO BỘI PHẢN */}
+                    {/* THANH CẢNH BÁO BỘI PHẢN MỚI */}
                     {biasCheck.status !== "ALIGNED" && (
                         <div style={{ background: biasCheck.color === '#dc2626' ? '#fef2f2' : '#f8fafc', padding: '10px 25px', borderBottom: `1px dashed ${biasCheck.color}`, color: biasCheck.color, fontWeight: 'bold', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <AlertTriangle size={16} /> LƯU Ý TỪ HẢI ĐĂNG: {biasCheck.text}
@@ -590,11 +588,18 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
                                 <div>
                                     <label style={labelStyle}>Setup Conditions (Dynamic)</label>
                                     <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '8px', border: '1px solid #e2e8f0', maxHeight: '300px', overflowY: 'auto' }}>
-                                        {dynamicChecklistItems.map((item, i) => (
-                                            <label key={i} style={{ display: 'flex', gap: '10px', fontSize: '13px', marginBottom: '10px', cursor: 'pointer', color: checklist[item] ? '#166534' : '#475569', fontWeight: 500 }}>
-                                                <input type="checkbox" checked={checklist[item] || false} onChange={e => setChecklist({ ...checklist, [item]: e.target.checked })} style={{ transform: 'scale(1.2)' }} /> {item}
-                                            </label>
-                                        ))}
+                                        {/* HIỂN THỊ CHECKLIST THÔNG MINH */}
+                                        {dynamicChecklistItems.length === 0 ? (
+                                            <div style={{ fontSize: '13px', color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', padding: '20px 0' }}>
+                                                {!selectedSetupId ? "Vui lòng chọn 'Main Model' bên cạnh để tải Checklist." : "Setup này chưa có Checklist cấu hình sẵn."}
+                                            </div>
+                                        ) : (
+                                            dynamicChecklistItems.map((item, i) => (
+                                                <label key={i} style={{ display: 'flex', gap: '10px', fontSize: '13px', marginBottom: '10px', cursor: 'pointer', color: checklist[item] ? '#166534' : '#475569', fontWeight: 500 }}>
+                                                    <input type="checkbox" checked={checklist[item] || false} onChange={e => setChecklist({ ...checklist, [item]: e.target.checked })} style={{ transform: 'scale(1.2)' }} /> {item}
+                                                </label>
+                                            ))
+                                        )}
                                     </div>
                                 </div>
                                 <div>
