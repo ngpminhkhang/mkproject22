@@ -16,26 +16,25 @@ const COMPLIANCE_RULES = ["Đồng thuận HTF Bias/Trend?", "Setup đúng mẫu
 const TRADE_CLASSES = [{ id: "A+", label: "A+ Setup (Perfect)", color: "#16a34a" }, { id: "B", label: "B Setup (Standard)", color: "#2563eb" }, { id: "GOOD_LOSS", label: "Good Loss (Đúng luật)", color: "#ea580c" }, { id: "BAD_WIN", label: "Bad Win (Ăn may)", color: "#db2777" }, { id: "BAD_LOSS", label: "Bad Loss (Phá luật)", color: "#dc2626" }];
 const MISTAKES_LIST = ["FOMO", "Revenge", "Oversize", "No Plan", "Early Exit", "Moved SL", "Hesitation"];
 
-// BỘ GIẢI MÃ CHỐNG ĐỘT TỬ
-const parseDeep = (val: any, fallback: any = {}): any => {
-    if (val === null || val === undefined) return fallback;
-    if (typeof val === 'object') return val;
-    if (typeof val === 'string') {
-        const trimmed = val.trim();
-        if (trimmed === "" || trimmed === "[]" || trimmed === "{}") return fallback;
-        try {
-            let p = JSON.parse(trimmed);
-            // Vòng lặp vỡ lòng: Tiếp tục lột nếu bên trong vẫn là chuỗi
-            while (typeof p === 'string') {
-                p = JSON.parse(p);
+// BỘ GIẢI MÃ CHỐNG ĐỘT TỬ (V2)
+const safeJSONParse = (val: any, fallback: any = {}) => {
+    try {
+        if (val === null || val === undefined) return fallback;
+        if (typeof val === "object") return val;
+        if (typeof val === "string") {
+            if (!val.trim()) return fallback;
+            let parsed = JSON.parse(val);
+            if (typeof parsed === "string") {
+                parsed = JSON.parse(parsed);
             }
-            return p;
-        } catch (e) { 
-            return fallback; 
+            return parsed;
         }
+        return fallback;
+    } catch {
+        return fallback;
     }
-    return fallback;
 };
+
 const ensureArray = (val: any) => Array.isArray(val) ? val : [];
 const ensureObject = (val: any) => (typeof val === 'object' && val !== null && !Array.isArray(val)) ? val : {};
 
@@ -69,7 +68,6 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
     const [filterPair, setFilterPair] = useState("");
     const [filterOutcome, setFilterOutcome] = useState("ALL");
     const [uniquePairs, setUniquePairs] = useState<string[]>([]);
-    
     const [selectedTrade, setSelectedTrade] = useState<Trade | null>(null);
     const [previewImg, setPreviewImg] = useState<string | null>(null);
     const [editPnL, setEditPnL] = useState<number>(0);
@@ -98,67 +96,68 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
     useEffect(() => { loadData(); }, [accountId, dateFrom, dateTo, filterOutcome, filterPair]);
 
     const openReview = (t: Trade) => {
-        const rev = ensureObject(parseDeep(t.review_data, {}));
-        const comp = ensureObject(rev._compliance || { score: 0, items: {} }); 
-        
+        const rev = ensureObject(safeJSONParse(t.review_data, {}));
+        const comp = ensureObject(rev._compliance || { score: 0, items: {} });
         setReviewData({ lessons: rev.lessons || "", action_plan: rev.action_plan || "" });
         setMistakes(ensureArray(rev.mistakes));
         setTradeClass(t.trade_class || rev._trade_class || "");
-        setResultImages(ensureArray(parseDeep(t.result_images, [])));
+        setResultImages(ensureArray(safeJSONParse(t.result_images, [])));
         setCompliance({ score: comp.score || 0, items: ensureObject(comp.items) });
         setEditPnL(t.pnl || 0);
         setEditExitPrice(t.exit_price || 0);
         setTempImgLink("");
         setSelectedTrade(t);
     };
+
     const handleAddImage = () => {
         if (!tempImgLink) return;
         setResultImages([...resultImages, tempImgLink]);
         setTempImgLink("");
     };
+
     const handleSave = async () => {
-    if (!selectedTrade) return;
-    try {
-        const safeItems = ensureObject(compliance.items);
-        const checkedCount = Object.values(safeItems).filter(Boolean).length;
-        const score = Math.round((checkedCount / COMPLIANCE_RULES.length) * 100);
+        if (!selectedTrade) return;
+        try {
+            const safeItems = ensureObject(compliance.items);
+            const checkedCount = Object.values(safeItems).filter(Boolean).length;
+            const score = Math.round((checkedCount / COMPLIANCE_RULES.length) * 100);
 
-        const packData = { 
-            lessons: reviewData.lessons, 
-            mistakes: mistakes, 
-            action_plan: reviewData.action_plan, 
-            _trade_class: tradeClass, 
-            _compliance: { score, items: safeItems } 
-        };
+            // [BỌC NILON TUYỆT ĐỐI]
+            const packData = { 
+                lessons: reviewData.lessons, 
+                mistakes: mistakes, 
+                action_plan: reviewData.action_plan, 
+                _trade_class: tradeClass, 
+                _compliance: { score, items: safeItems } 
+            };
 
-        const updatePayload = {
-            input: {
-                uuid: selectedTrade.uuid,
-                // Truyền THẲNG đối tượng và mảng, không dùng stringify ở đây!
-                review_data: packData, 
-                result_images: resultImages, 
-                pnl: editPnL,
-                exit_price: editExitPrice
-            }
-        };
+            const updatePayload = {
+                input: {
+                    uuid: selectedTrade.uuid,
+                    review_data: packData, // Bắn thẳng Object
+                    result_images: resultImages, // Bắn thẳng Array
+                    pnl: editPnL,
+                    exit_price: editExitPrice
+                }
+            };
 
-        const res = await fetch("https://mk-project19-1.onrender.com/api/scenarios/update/", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            // Hàm này sẽ đóng gói MỘT LẦN DUY NHẤT
-            body: JSON.stringify(updatePayload)
-        });
-            
+            const res = await fetch("https://mk-project19-1.onrender.com/api/scenarios/update/", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(updatePayload) // Gọi stringify MỘT LẦN ở đây
+            });
+
             if (res.ok) {
                 toast.success(`Đã đổ bê tông dữ liệu! PnL: $${editPnL}`);
                 await loadData();
-                // Không đã văng ra ngoài nữa!
             } else {
                 toast.error("Lỗi máy chủ Django!");
             }
         } catch (e) { toast.error("Đứt cáp quang: " + e); }
     };
 
-    const handleComplianceCheck = (rule: string) => { setCompliance(prev => ({ ...prev, items: { ...ensureObject(prev.items), [rule]: !ensureObject(prev.items)[rule] } })); };
+    const handleComplianceCheck = (rule: string) => { 
+        setCompliance(prev => ({ ...prev, items: { ...ensureObject(prev.items), [rule]: !ensureObject(prev.items)[rule] } }));
+    };
 
     const stats = useMemo(() => {
         const wins = trades.filter(t => t.pnl > 0).length;
@@ -191,7 +190,7 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
                 </div>
                 <div style={{ flex: 1, overflowY: 'auto' }}>
                     {trades.map(t => {
-                        const review = ensureObject(parseDeep(t.review_data, {}));
+                        const review = ensureObject(safeJSONParse(t.review_data, {}));
                         const tradeClass = t.trade_class || review._trade_class || "-";
                         const mistakesArr = ensureArray(review.mistakes);
                         const mistake = mistakesArr.length > 0 ? mistakesArr[0] : "-";
@@ -276,7 +275,7 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
                                     <div style={{ marginBottom: '15px' }}>
                                         <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#64748b', marginBottom: '5px' }}>PLAN</div>
                                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '8px' }}>
-                                            {ensureArray(parseDeep(selectedTrade.images, [])).map((path: string, i: number) => (
+                                            {ensureArray(safeJSONParse(selectedTrade.images, [])).map((path: string, i: number) => (
                                                 <div key={i} style={{ height: '80px', borderRadius: '4px', overflow: 'hidden', border: '1px solid #e2e8f0' }}><SafeImage path={path} onClick={() => setPreviewImg(path)} /></div>
                                             ))}
                                         </div>

@@ -7,31 +7,30 @@ const DEFAULT_HABITS = { sleep: false, meditate: false, checklist: false, workou
 const DEFAULT_DETAILS = { stress: 5, focus: 5, discipline: 5, journal_narrative: "", habits: DEFAULT_HABITS, psy_notes: [] };
 const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
-// BỘ ĐỌC DỮ LIỆU ĐA TẦNG
-const parseDeep = (val: any, fallback: any = {}): any => {
-    if (val === null || val === undefined) return fallback;
-    if (typeof val === 'object') return val;
-    if (typeof val === 'string') {
-        const trimmed = val.trim();
-        if (trimmed === "" || trimmed === "[]" || trimmed === "{}") return fallback;
-        try {
-            let p = JSON.parse(trimmed);
-            // Vòng lặp vỡ lòng: Tiếp tục lột nếu bên trong vẫn là chuỗi
-            while (typeof p === 'string') {
-                p = JSON.parse(p);
+// BỘ ĐỌC DỮ LIỆU ĐA TẦNG V2 - MIỄN NHIỄM CRASH
+const safeJSONParse = (val: any, fallback: any = {}) => {
+    try {
+        if (val === null || val === undefined) return fallback;
+        if (typeof val === "object") return val;
+        if (typeof val === "string") {
+            if (!val.trim() || val === "[]" || val === "{}") return fallback;
+            let parsed = JSON.parse(val);
+            while (typeof parsed === "string") {
+                parsed = JSON.parse(parsed);
             }
-            return p;
-        } catch (e) { 
-            return fallback; 
+            return parsed;
         }
+        return fallback;
+    } catch {
+        return fallback;
     }
-    return fallback;
 };
+
 const ensureArray = (val: any) => Array.isArray(val) ? val : [];
 const ensureObject = (val: any) => (typeof val === 'object' && val !== null && !Array.isArray(val)) ? val : {};
 
 const extractNotesText = (raw: any) => {
-    const parsed = parseDeep(raw);
+    const parsed = safeJSONParse(raw, {});
     if (parsed && typeof parsed === 'object') { return parsed.notes || ""; }
     if (typeof parsed === 'string') return parsed;
     return "";
@@ -54,12 +53,10 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
     const [missedTrades, setMissedTrades] = useState<any[]>([]);
     const [setups, setSetups] = useState<any[]>([]);
     const [outlookSnapshot, setOutlookSnapshot] = useState<{ bias: string, plan: string, technical: string, matrix: any[] }>({ bias: '...', plan: '...', technical: '...', matrix: [] });
-
     const [faScore, setFaScore] = useState(5);
     const [taScore, setTaScore] = useState(5);
     const [fusionScore, setFusionScore] = useState(5);
     const [details, setDetails] = useState<any>(DEFAULT_DETAILS);
-
     const [showPsyForm, setShowPsyForm] = useState(false);
     const [editingPsyItem, setEditingPsyItem] = useState<any | null>(null);
     const [psyForm, setPsyForm] = useState({ emotion: "Normal", context: "Pre-Trade", note: "" });
@@ -77,11 +74,13 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
             const baseUrl = "https://mk-project19-1.onrender.com/api";
             const scenRes = await fetch(`${baseUrl}/scenarios/?accountId=${accountId}&t=${Date.now()}`);
             const allScenarios = await scenRes.json();
-            
             if (Array.isArray(allScenarios)) {
                 const closedList = allScenarios.filter((x: any) => x.status === 'CLOSED' || x.status === 'ARCHIVED').map((x: any) => {
                     let m = 'None';
-                    try { const rd = ensureObject(parseDeep(x.review_data)); if (rd.mistakes && Array.isArray(rd.mistakes) && rd.mistakes.length > 0) m = rd.mistakes[0]; } catch {}
+                    try { 
+                        const rd = ensureObject(safeJSONParse(x.review_data)); 
+                        if (rd.mistakes && Array.isArray(rd.mistakes) && rd.mistakes.length > 0) m = rd.mistakes[0]; 
+                    } catch {}
                     return { ...x, outcome: x.pnl > 0 ? 'win' : 'loss', mistake: m, pnl: Number(x.pnl) || 0 };
                 });
                 setTrades(closedList);
@@ -90,7 +89,7 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                     return {
                         uuid: x.uuid, pair: x.pair, direction: x.direction, reason: x.status, 
                         notes: extractNotesText(x.analysis_details),
-                        images: ensureArray(parseDeep(x.images, [])), 
+                        images: ensureArray(safeJSONParse(x.images, [])), 
                         created_at: x.created_at
                     };
                 });
@@ -101,8 +100,9 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
             if (revRes.ok) {
                 const rev = await revRes.json();
                 if (rev.fa_accuracy) {
-                    setFaScore(rev.fa_accuracy); setTaScore(rev.ta_accuracy); setFusionScore(rev.fusion_score);
-                    const parsedDetails = ensureObject(parseDeep(rev.review_details, DEFAULT_DETAILS));
+                    setFaScore(rev.fa_accuracy);
+                    setTaScore(rev.ta_accuracy); setFusionScore(rev.fusion_score);
+                    const parsedDetails = ensureObject(safeJSONParse(rev.review_details, DEFAULT_DETAILS));
                     setDetails({ ...DEFAULT_DETAILS, ...parsedDetails, habits: { ...DEFAULT_HABITS, ...(parsedDetails.habits || {}) }, psy_notes: parsedDetails.psy_notes || [] });
                 } else { setFaScore(5); setTaScore(5); setFusionScore(5); setDetails(DEFAULT_DETAILS); }
             }
@@ -111,7 +111,7 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
             if (outRes.ok) {
                 const out = await outRes.json();
                 if (!out.error) {
-                    const fa = ensureObject(parseDeep(out.fa_bias, {}));
+                    const fa = ensureObject(safeJSONParse(out.fa_bias, {}));
                     setOutlookSnapshot({ 
                         bias: out.weekly_bias || "NEUTRAL", 
                         plan: out.execution_script || "", 
@@ -134,21 +134,17 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
         try {
             const wins = trades.filter(t => t.outcome === 'win').length;
             const netPnl = trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0);
-            
             const payload = {
                 week_start_date: currentWeek, account_id: accountId, total_trades: trades.length,
                 win_rate: trades.length > 0 ? (wins / trades.length) * 100 : 0, net_pnl: netPnl,
                 fa_accuracy: faScore, ta_accuracy: taScore, fusion_score: fusionScore,
-                review_details: JSON.stringify(details)
+                review_details: details // Bắn thẳng object
             };
-
             await fetch("https://mk-project19-1.onrender.com/api/reviews/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-
             toast.success("Hồ sơ thẩm vấn đã được cất vào két!");
         } catch (e) { toast.error("Cáp quang đứt: " + String(e)); }
     };
 
-    // --- FORM XỬ LÝ MISSED/CANCEL ĐÚNG CHUẨN ---
     const openAddMissed = () => {
         setEditingMissedItem(null);
         setMissedForm({ pair: "EURUSD", direction: "BUY", reason: "Hesitation", notes: "", image_paths: [] });
@@ -156,83 +152,59 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
     };
 
     const handleSaveMissedNote = async () => {
-    if (!missedForm.pair || !missedForm.notes) return toast.error("Cần nhập Pair và Ghi chú!");
-    try {
-        const baseUrl = "https://mk-project19-1.onrender.com/api/scenarios";
-        
-        // Chuẩn bị dữ liệu: Ép kiểu tuyệt đối ở đây để dứt điểm lỗi double-stringify
-        // Gửi THẲNG object và mảng, KHÔNG JSON.stringify!
-        const commonData = {
-            analysis_details: { notes: missedForm.notes },
-            images: missedForm.image_paths
-        };
-        
-        if (editingMissedItem) {
-            const updatePayload = {
-                input: {
-                    uuid: editingMissedItem.uuid,
-                    ...commonData // correct: sending raw objects/arrays
-                }
-            };
+        if (!missedForm.pair || !missedForm.notes) return toast.error("Cần nhập Pair và Ghi chú!");
+        try {
+            const baseUrl = "https://mk-project19-1.onrender.com/api/scenarios";
             
-            // Sếp kiểm tra trong console xem dữ liệu này có bị dính JSON.stringify không nhé
-            console.log("Saving existing missed item, sending raw data:", updatePayload);
-            
-            const res = await fetch(`${baseUrl}/update/`, {
-                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updatePayload)
-            });
-            const updateData = await res.json();
-            if (!res.ok) throw new Error(updateData.error);
-        } else {
-            // ... (creation steps)
-            const createPayload = {
-                input: {
-                    pair: missedForm.pair, direction: missedForm.direction, outlook_id: `WEEK-${currentWeek}`,
-                    account_id: accountId, entry_price: 0, sl_price: 0, tp_price: 0, volume: 0
-                }
-            };
-            const createRes = await fetch(`${baseUrl}/create/`, {
-                method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(createPayload)
-            });
-            const createData = await createRes.json();
-            if (!createRes.ok) throw new Error(createData.error);
-            const newUuid = createData.uuid;
+            if (editingMissedItem) {
+                const updatePayload = {
+                    input: {
+                        uuid: editingMissedItem.uuid,
+                        analysis_details: { notes: missedForm.notes }, // Gửi object nguyên bản
+                        images: missedForm.image_paths // Gửi array nguyên bản
+                    }
+                };
+                await fetch(`${baseUrl}/update/`, {
+                    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updatePayload)
+                });
+            } else {
+                const createRes = await fetch(`${baseUrl}/create/`, {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        input: {
+                            pair: missedForm.pair, direction: missedForm.direction, outlook_id: `WEEK-${currentWeek}`,
+                            account_id: accountId, entry_price: 0, sl_price: 0, tp_price: 0, volume: 0
+                        }
+                    })
+                });
+                const createData = await createRes.json();
+                const newUuid = createData.uuid;
 
-            // Update status
-            const statusRes = await fetch(`${baseUrl}/status/`, {
-                method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ uuid: newUuid, status: missedForm.reason === 'CANCELLED' ? 'CANCELLED' : 'MISSED' })
-            });
-            const statusData = await statusRes.json();
-            if (!statusRes.ok) throw new Error(statusData.error);
+                await fetch(`${baseUrl}/status/`, {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ uuid: newUuid, status: missedForm.reason === 'CANCELLED' ? 'CANCELLED' : 'MISSED' })
+                });
 
-            // Update details
-            const updatePayload = {
-                input: { 
-                    uuid: newUuid, 
-                    ...commonData // correct: sending raw objects/arrays
-                }
-            };
-            console.log("Updating newly created missed item, sending raw data:", updatePayload);
+                await fetch(`${baseUrl}/update/`, {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        input: { 
+                            uuid: newUuid, 
+                            analysis_details: { notes: missedForm.notes }, // Gửi object nguyên bản
+                            images: missedForm.image_paths // Gửi array nguyên bản
+                        }
+                    })
+                });
+            }
 
-            const res = await fetch(`${baseUrl}/update/`, {
-                method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(updatePayload)
-            });
-            const updateData = await res.json();
-            if (!res.ok) throw new Error(updateData.error);
+            toast.success("Đã cất cẩn thận!");
+            setShowMissedForm(false);
+            setEditingMissedItem(null);
+            await loadData();
+        } catch (e) {
+            toast.error("Lỗi cáp quang: " + e);
         }
-
-        toast.success("Đã cất cẩn thận!");
-        setShowMissedForm(false);
-        setEditingMissedItem(null);
-        await loadData();
-    } catch (e) {
-        toast.error("Lỗi cáp quang: " + e);
-        console.error("Save missed item error:", e);
-    }
-};
+    };
 
     const handleDeleteMissed = async (uuid: string) => {
         if (!confirm("Sếp muốn phi tang hồ sơ này?")) return;
@@ -447,9 +419,9 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                                         <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
                                             <span style={{ fontSize: '10px', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>{m.reason}</span>
                                             <button onClick={() => { 
-                                                setEditingMissedItem(m); 
+                                                setEditingMissedItem(m);
                                                 setMissedForm({ pair: m.pair, direction: m.direction, reason: m.reason, notes: m.notes, image_paths: m.images || [] }); 
-                                                setShowMissedForm(true); 
+                                                setShowMissedForm(true);
                                             }} style={{ color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer' }}><Edit3 size={14} /></button>
                                             <button onClick={() => handleDeleteMissed(m.uuid)} style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }}><Trash2 size={14} /></button>
                                         </div>
