@@ -17,7 +17,12 @@ const COMPLIANCE_RULES = ["Đồng thuận HTF Bias/Trend?", "Setup đúng mẫu
 const TRADE_CLASSES = [{ id: "A+", label: "A+ Setup (Perfect)", color: "#16a34a" }, { id: "B", label: "B Setup (Standard)", color: "#2563eb" }, { id: "GOOD_LOSS", label: "Good Loss (Đúng luật)", color: "#ea580c" }, { id: "BAD_WIN", label: "Bad Win (Ăn may)", color: "#db2777" }, { id: "BAD_LOSS", label: "Bad Loss (Phá luật)", color: "#dc2626" }];
 const MISTAKES_LIST = ["FOMO", "Revenge", "Oversize", "No Plan", "Early Exit", "Moved SL", "Hesitation"];
 
-const safeJSONParse = (str: string | undefined | null, fallback: any) => { if (!str || str === "") return fallback; try { return JSON.parse(str); } catch (e) { return fallback; } };
+// [THUỐC GIẢI MẤT TRÍ NHỚ ĐÂY SẾP]
+const safeJSONParse = (val: any, fallback: any) => { 
+    if (!val) return fallback; 
+    if (typeof val === 'object') return val; // Gặp Object trả luôn Object
+    try { return JSON.parse(val); } catch (e) { return fallback; } 
+};
 
 const StatCard = ({ title, value, sub, color }: any) => (
     <div style={{ background: 'white', padding: '15px', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', flex: 1 }}>
@@ -83,7 +88,6 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
 
     useEffect(() => { loadData(); }, [accountId, dateFrom, dateTo, filterOutcome, filterPair]);
 
-    // [FIX CHÍ TỬ] Đọc đúng dữ liệu Compliance từ cục review_data
     const openReview = (t: Trade) => {
         const rev = safeJSONParse(t.review_data, {});
         const comp = rev._compliance || { score: 0, items: {} }; 
@@ -113,7 +117,6 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
             const score = Math.round((checkedCount / COMPLIANCE_RULES.length) * 100);
             const finalCompliance = { score, items: safeItems };
             
-            // Gom chung vào 1 cục review_data
             const packData = { 
                 lessons: reviewData.lessons, 
                 mistakes: mistakes, 
@@ -138,7 +141,7 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
             });
             
             if (res.ok) {
-                toast.success(`Đã đóng dấu hồ sơ! PnL: $${editPnL}`);
+                toast.success(`Đã lưu sổ cái! PnL: $${editPnL}`);
                 loadData(); setSelectedTrade(null);
             } else {
                 toast.error("Lỗi máy chủ Django!");
@@ -284,14 +287,7 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
                                         </div>
                                         
                                         <div style={{ display: 'flex', gap: '5px', marginBottom: '10px' }}>
-                                            <input 
-                                                type="text" 
-                                                placeholder="https://imgur.com/xyz.png" 
-                                                value={tempImgLink}
-                                                onChange={(e) => setTempImgLink(e.target.value)}
-                                                onKeyDown={(e) => { if (e.key === 'Enter') handleAddImage(); }}
-                                                style={{ flex: 1, padding: '6px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }}
-                                            />
+                                            <input type="text" placeholder="https://imgur.com/xyz.png" value={tempImgLink} onChange={(e) => setTempImgLink(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleAddImage(); }} style={{ flex: 1, padding: '6px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }} />
                                             <button onClick={handleAddImage} style={{ background: '#2563eb', color: 'white', border: 'none', padding: '0 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>ADD</button>
                                         </div>
 

@@ -7,7 +7,13 @@ const DEFAULT_HABITS = { sleep: false, meditate: false, checklist: false, workou
 const DEFAULT_DETAILS = { stress: 5, focus: 5, discipline: 5, journal_narrative: "", habits: DEFAULT_HABITS, psy_notes: [] };
 const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
-const safeJSONParse = (str: string, fallback: any) => { if (!str) return fallback; try { return JSON.parse(str) || fallback; } catch (e) { return fallback; } };
+// [THUỐC GIẢI MẤT TRÍ NHỚ ĐÂY SẾP]
+const safeJSONParse = (val: any, fallback: any) => { 
+    if (!val) return fallback; 
+    if (typeof val === 'object') return val;
+    try { return JSON.parse(val) || fallback; } catch (e) { return fallback; } 
+};
+
 const getMonday = (d: Date) => { const date = new Date(d); const day = date.getDay(); const diff = date.getDate() - day + (day === 0 ? -6 : 1); date.setDate(diff); date.setHours(0, 0, 0, 0); const offset = date.getTimezoneOffset(); return new Date(date.getTime() - (offset * 60000)).toISOString().split('T')[0]; };
 
 export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number }) {
@@ -29,7 +35,6 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
     const [editingPsyItem, setEditingPsyItem] = useState<any | null>(null);
     const [psyForm, setPsyForm] = useState({ emotion: "Normal", context: "Pre-Trade", note: "" });
 
-    // State cho Form Note Missed
     const [editingMissedItem, setEditingMissedItem] = useState<any | null>(null);
     const [missedNote, setMissedNote] = useState("");
 
@@ -48,9 +53,11 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                 });
                 setTrades(closedList);
 
-                // Gom chung Missed và Cancelled
+                // Dò đúng khoang chứa JSON để đọc notes
                 const autoMissed = allScenarios.filter((x: any) => ['MISSED', 'CANCELLED'].includes(x.status)).map((x: any) => ({
-                    uuid: x.uuid, pair: x.pair, direction: x.direction, reason: x.status, notes: x.analysis_details || "", images: x.images, created_at: x.created_at
+                    uuid: x.uuid, pair: x.pair, direction: x.direction, reason: x.status, 
+                    notes: (typeof x.analysis_details === 'object' ? x.analysis_details?.notes : x.analysis_details) || "",
+                    images: x.images, created_at: x.created_at
                 }));
                 setMissedTrades(autoMissed);
             }
@@ -108,14 +115,14 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
         } catch (e) { toast.error("Cáp quang đứt: " + String(e)); }
     };
 
-    // --- XỬ LÝ LƯU GHI CHÚ CHO LỆNH MISSED ---
     const handleSaveMissedNote = async () => {
         if (!editingMissedItem) return;
         try {
             const updatePayload = {
                 input: {
                     uuid: editingMissedItem.uuid,
-                    analysis_details: missedNote // Đẩy thẳng vào cột này
+                    // Bọc vào Object để hầm Django nhai chuẩn JSON
+                    analysis_details: JSON.stringify({ notes: missedNote }) 
                 }
             };
             
@@ -290,12 +297,10 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                                         <strong>{m.pair} <span style={{ fontSize: '11px', color: '#64748b' }}>({m.direction})</span></strong>
                                         <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
                                             <span style={{ fontSize: '10px', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>{m.reason}</span>
-                                            {/* NÚT EDIT GHI CHÚ */}
                                             <button onClick={() => { setEditingMissedItem(m); setMissedNote(m.notes); }} style={{ color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer' }}><Edit3 size={14} /></button>
                                         </div>
                                     </div>
                                     
-                                    {/* NẾU ĐANG BẤM EDIT, HIỆN Ô NHẬP LÝ DO LÊN ĐÂY */}
                                     {editingMissedItem?.uuid === m.uuid ? (
                                         <div style={{ marginTop: '10px', display: 'flex', gap: '5px' }}>
                                             <input 
