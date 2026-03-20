@@ -7,7 +7,7 @@ const DEFAULT_HABITS = { sleep: false, meditate: false, checklist: false, workou
 const DEFAULT_DETAILS = { stress: 5, focus: 5, discipline: 5, journal_narrative: "", habits: DEFAULT_HABITS, psy_notes: [] };
 const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
-// [THUỐC GIẢI MẤT TRÍ NHỚ ĐÂY SẾP]
+// BỘ GIẢI MÃ JSON THÉP
 const safeJSONParse = (val: any, fallback: any) => { 
     if (!val) return fallback; 
     if (typeof val === 'object') return val;
@@ -42,7 +42,9 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
         setIsLoading(true);
         try {
             const baseUrl = "https://mk-project19-1.onrender.com/api";
-            const scenRes = await fetch(`${baseUrl}/scenarios/?accountId=${accountId}`);
+            
+            // [CHỐNG ĐÔNG CACHE]
+            const scenRes = await fetch(`${baseUrl}/scenarios/?accountId=${accountId}&t=${Date.now()}`);
             const allScenarios = await scenRes.json();
             
             if (Array.isArray(allScenarios)) {
@@ -53,16 +55,20 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                 });
                 setTrades(closedList);
 
-                // Dò đúng khoang chứa JSON để đọc notes
-                const autoMissed = allScenarios.filter((x: any) => ['MISSED', 'CANCELLED'].includes(x.status)).map((x: any) => ({
-                    uuid: x.uuid, pair: x.pair, direction: x.direction, reason: x.status, 
-                    notes: (typeof x.analysis_details === 'object' ? x.analysis_details?.notes : x.analysis_details) || "",
-                    images: x.images, created_at: x.created_at
-                }));
+                // FIX LỖI HIỂN THỊ "{}"
+                const autoMissed = allScenarios.filter((x: any) => ['MISSED', 'CANCELLED'].includes(x.status)).map((x: any) => {
+                    const parsedNotes = safeJSONParse(x.analysis_details, {});
+                    const finalNotes = parsedNotes.notes !== undefined ? parsedNotes.notes : (typeof x.analysis_details === 'string' ? x.analysis_details : "");
+                    return {
+                        uuid: x.uuid, pair: x.pair, direction: x.direction, reason: x.status, 
+                        notes: finalNotes,
+                        images: x.images, created_at: x.created_at
+                    };
+                });
                 setMissedTrades(autoMissed);
             }
 
-            const revRes = await fetch(`${baseUrl}/reviews/?week_start=${currentWeek}`);
+            const revRes = await fetch(`${baseUrl}/reviews/?week_start=${currentWeek}&t=${Date.now()}`);
             if (revRes.ok) {
                 const rev = await revRes.json();
                 if (rev.fa_accuracy) {
@@ -72,12 +78,17 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                 } else { setFaScore(5); setTaScore(5); setFusionScore(5); setDetails(DEFAULT_DETAILS); }
             }
 
-            const outRes = await fetch(`${baseUrl}/outlook/current/?week_start=${currentWeek}`);
+            const outRes = await fetch(`${baseUrl}/outlook/current/?week_start=${currentWeek}&t=${Date.now()}`);
             if (outRes.ok) {
                 const out = await outRes.json();
                 if (!out.error) {
                     const fa = safeJSONParse(out.fa_bias, {});
-                    setOutlookSnapshot({ bias: out.weekly_bias || "NEUTRAL", plan: out.execution_script || "", technical: out.ta_bias || "", matrix: Array.isArray(fa.planned) ? fa.planned : [] });
+                    setOutlookSnapshot({ 
+                        bias: out.weekly_bias || "NEUTRAL", 
+                        plan: out.execution_script || "", 
+                        technical: fa.technical_plan || "", // Kéo Technical Plan ra từ đây
+                        matrix: Array.isArray(fa.planned) ? fa.planned : [] 
+                    });
                 }
             }
 
@@ -102,14 +113,24 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                 review_details: JSON.stringify(details)
             };
 
-            const res = await fetch("https://mk-project19-1.onrender.com/api/reviews/", {
+            await fetch("https://mk-project19-1.onrender.com/api/reviews/", {
                 method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
             });
 
-            if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.error || "Django từ chối nhận lệnh");
-            }
+            // LƯU ĐỒNG THỜI TECHNICAL PLAN VÀO BẢNG OUTLOOK
+            await fetch("https://mk-project19-1.onrender.com/api/outlook/sync/", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    week_start: currentWeek,
+                    market_sentiment: outlookSnapshot.bias, 
+                    weekly_bias: outlookSnapshot.bias,
+                    execution_script: outlookSnapshot.plan,
+                    fa_bias: JSON.stringify({
+                        planned: outlookSnapshot.matrix,
+                        technical_plan: outlookSnapshot.technical // Nhồi thẳng Technical Plan vào đây
+                    })
+                })
+            });
 
             toast.success("Hồ sơ thẩm vấn đã được cất vào két!");
         } catch (e) { toast.error("Cáp quang đứt: " + String(e)); }
@@ -121,8 +142,7 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
             const updatePayload = {
                 input: {
                     uuid: editingMissedItem.uuid,
-                    // Bọc vào Object để hầm Django nhai chuẩn JSON
-                    analysis_details: JSON.stringify({ notes: missedNote }) 
+                    analysis_details: { notes: missedNote } // Truyền Object thẳng, Django tự nhai
                 }
             };
             
@@ -134,7 +154,7 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                 toast.success("Đã ghi nhận bài học sương máu!");
                 setEditingMissedItem(null);
                 setMissedNote("");
-                loadData();
+                await loadData();
             } else {
                 toast.error("Lỗi từ máy chủ!");
             }

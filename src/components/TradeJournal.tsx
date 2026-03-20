@@ -6,8 +6,8 @@ interface Trade {
     uuid: string; pair: string; direction: "BUY" | "SELL"; status: string;
     pnl: number; entry_price: number; sl_price: number; tp_price: number; volume: number;
     exit_price: number; close_time?: number; setup_id?: number | null;
-    analysis_details: string; pre_trade_checklist: string; images: string;
-    review_data: string; result_images: string; created_at: number;
+    analysis_details: any; pre_trade_checklist: any; images: any;
+    review_data: any; result_images: any; created_at: number;
     htf_trend?: string; market_phase?: string; narrative?: string; scenario_type?: string;
     trade_class?: string; root_cause?: string;
 }
@@ -17,10 +17,10 @@ const COMPLIANCE_RULES = ["Đồng thuận HTF Bias/Trend?", "Setup đúng mẫu
 const TRADE_CLASSES = [{ id: "A+", label: "A+ Setup (Perfect)", color: "#16a34a" }, { id: "B", label: "B Setup (Standard)", color: "#2563eb" }, { id: "GOOD_LOSS", label: "Good Loss (Đúng luật)", color: "#ea580c" }, { id: "BAD_WIN", label: "Bad Win (Ăn may)", color: "#db2777" }, { id: "BAD_LOSS", label: "Bad Loss (Phá luật)", color: "#dc2626" }];
 const MISTAKES_LIST = ["FOMO", "Revenge", "Oversize", "No Plan", "Early Exit", "Moved SL", "Hesitation"];
 
-// [THUỐC GIẢI MẤT TRÍ NHỚ ĐÂY SẾP]
+// BỘ GIẢI MÃ JSON THÉP - KHÔNG BAO GIỜ LỖI
 const safeJSONParse = (val: any, fallback: any) => { 
     if (!val) return fallback; 
-    if (typeof val === 'object') return val; // Gặp Object trả luôn Object
+    if (typeof val === 'object') return val;
     try { return JSON.parse(val); } catch (e) { return fallback; } 
 };
 
@@ -74,7 +74,8 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
     const loadData = async () => {
         setLoading(true);
         try {
-            const res = await fetch(`https://mk-project19-1.onrender.com/api/scenarios/?accountId=${accountId}`);
+            // [CHỐNG ĐÔNG CACHE] Thêm t=Date.now() để ép tải mới 100%
+            const res = await fetch(`https://mk-project19-1.onrender.com/api/scenarios/?accountId=${accountId}&t=${Date.now()}`);
             const rawList = await res.json();
             if (Array.isArray(rawList)) {
                 let filtered = rawList.filter((t: any) => ['CLOSED', 'ARCHIVED'].includes(t.status));
@@ -115,21 +116,20 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
             const safeItems = compliance?.items || {};
             const checkedCount = Object.values(safeItems).filter(Boolean).length;
             const score = Math.round((checkedCount / COMPLIANCE_RULES.length) * 100);
-            const finalCompliance = { score, items: safeItems };
             
             const packData = { 
                 lessons: reviewData.lessons, 
                 mistakes: mistakes, 
                 action_plan: reviewData.action_plan, 
                 _trade_class: tradeClass, 
-                _compliance: finalCompliance 
+                _compliance: { score, items: safeItems } 
             };
             
             const updatePayload = {
                 input: {
                     uuid: selectedTrade.uuid,
-                    review_data: JSON.stringify(packData),
-                    result_images: JSON.stringify(resultImages),
+                    review_data: packData, // Truyền thẳng Object, Django sẽ tự lo
+                    result_images: resultImages, 
                     pnl: editPnL,
                     exit_price: editExitPrice
                 }
@@ -142,7 +142,8 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
             
             if (res.ok) {
                 toast.success(`Đã lưu sổ cái! PnL: $${editPnL}`);
-                loadData(); setSelectedTrade(null);
+                await loadData(); // Load lại mới 100%
+                setSelectedTrade(null);
             } else {
                 toast.error("Lỗi máy chủ Django!");
             }
@@ -191,6 +192,8 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
                         const review = safeJSONParse(t.review_data, {});
                         const tradeClass = t.trade_class || review._trade_class || "-";
                         const mistake = (review.mistakes && review.mistakes[0]) || "-";
+                        const notesObj = safeJSONParse(t.analysis_details, {});
+                        
                         return (
                             <div key={t.uuid} style={{ display: 'grid', gridTemplateColumns: '1fr 0.5fr 0.5fr 0.8fr 0.8fr 1fr 1fr 1.5fr 80px', padding: '12px 20px', borderBottom: '1px solid #f1f5f9', fontSize: '13px', alignItems: 'center' }}>
                                 <div><div style={{ fontWeight: 'bold', color: '#1e293b' }}>{t.pair}</div><div style={{ fontSize: '10px', color: '#94a3b8' }}>{new Date(t.created_at || Date.now()).toLocaleDateString()}</div></div>
@@ -203,7 +206,7 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
                                     {tradeClass !== '-' && <span style={{ fontSize: '10px', padding: '2px 4px', border: '1px solid #e2e8f0', borderRadius: '3px', marginRight: '5px', background: '#f8fafc' }}>{tradeClass}</span>}
                                     {mistake !== '-' && <span style={{ fontSize: '10px', color: '#dc2626' }}>{mistake}</span>}
                                 </div>
-                                <div style={{ color: '#64748b', fontStyle: 'italic', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.narrative || safeJSONParse(t.analysis_details, {}).notes || "-"}</div>
+                                <div style={{ color: '#64748b', fontStyle: 'italic', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.narrative || notesObj.notes || "-"}</div>
                                 <div style={{ textAlign: 'right' }}><button onClick={() => openReview(t)} style={{ padding: '6px 10px', background: '#eff6ff', color: '#2563eb', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}><Eye size={14} /></button></div>
                             </div>
                         )
@@ -287,7 +290,12 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
                                         </div>
                                         
                                         <div style={{ display: 'flex', gap: '5px', marginBottom: '10px' }}>
-                                            <input type="text" placeholder="https://imgur.com/xyz.png" value={tempImgLink} onChange={(e) => setTempImgLink(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleAddImage(); }} style={{ flex: 1, padding: '6px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }} />
+                                            <input 
+                                                type="text" placeholder="https://imgur.com/xyz.png" 
+                                                value={tempImgLink} onChange={(e) => setTempImgLink(e.target.value)}
+                                                onKeyDown={(e) => { if (e.key === 'Enter') handleAddImage(); }}
+                                                style={{ flex: 1, padding: '6px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }}
+                                            />
                                             <button onClick={handleAddImage} style={{ background: '#2563eb', color: 'white', border: 'none', padding: '0 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>ADD</button>
                                         </div>
 
