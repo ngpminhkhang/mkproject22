@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Filter, X, Save, Eye, Star, Camera, CheckCircle2, Calendar, RefreshCw, AlertTriangle, ShieldCheck, Target, TrendingUp, AlertOctagon, Activity, Lock } from "lucide-react";
+import { Filter, X, Save, Eye, Camera, RefreshCw, Activity, Target, ShieldCheck, AlertOctagon } from "lucide-react";
 import toast, { Toaster } from 'react-hot-toast';
 
 interface Trade {
@@ -17,10 +17,7 @@ const COMPLIANCE_RULES = ["Đồng thuận HTF Bias/Trend?", "Setup đúng mẫu
 const TRADE_CLASSES = [{ id: "A+", label: "A+ Setup (Perfect)", color: "#16a34a" }, { id: "B", label: "B Setup (Standard)", color: "#2563eb" }, { id: "GOOD_LOSS", label: "Good Loss (Đúng luật)", color: "#ea580c" }, { id: "BAD_WIN", label: "Bad Win (Ăn may)", color: "#db2777" }, { id: "BAD_LOSS", label: "Bad Loss (Phá luật)", color: "#dc2626" }];
 const MISTAKES_LIST = ["FOMO", "Revenge", "Oversize", "No Plan", "Early Exit", "Moved SL", "Hesitation"];
 
-const safeJSONParse = (str: string | undefined | null, fallback: any) => {
-    if (!str || str === "") return fallback;
-    try { return JSON.parse(str); } catch (e) { return fallback; }
-};
+const safeJSONParse = (str: string | undefined | null, fallback: any) => { if (!str || str === "") return fallback; try { return JSON.parse(str); } catch (e) { return fallback; } };
 
 const StatCard = ({ title, value, sub, color }: any) => (
     <div style={{ background: 'white', padding: '15px', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', flex: 1 }}>
@@ -30,7 +27,6 @@ const StatCard = ({ title, value, sub, color }: any) => (
     </div>
 );
 
-// Bản Web dùng img src trực tiếp, không cần load_image_base64
 const SafeImage = ({ path, onClick }: any) => {
     if (!path || path === "[]") return <div style={{ width: '100%', height: '100%', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#cbd5e1', fontSize: '10px' }}>No Img</div>;
     return <img src={path} style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'zoom-in' }} onClick={onClick} />;
@@ -68,6 +64,9 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
     const [tradeClass, setTradeClass] = useState("");
     const [mistakes, setMistakes] = useState<string[]>([]);
     const [resultImages, setResultImages] = useState<string[]>([]);
+    
+    // BIẾN LƯU LINK ẢNH TẠM THỜI
+    const [tempImgLink, setTempImgLink] = useState("");
 
     const loadData = async () => {
         setLoading(true);
@@ -75,10 +74,8 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
             const res = await fetch(`https://mk-project19-1.onrender.com/api/scenarios/?accountId=${accountId}`);
             const rawList = await res.json();
             if (Array.isArray(rawList)) {
-                // Chỉ nhặt xác chết (CLOSED hoặc ARCHIVED)
                 let filtered = rawList.filter((t: any) => ['CLOSED', 'ARCHIVED'].includes(t.status));
                 if (filterPair !== "") filtered = filtered.filter((t: any) => t.pair === filterPair);
-                
                 if (filterPair === "") setUniquePairs(Array.from(new Set(rawList.map((t: any) => t.pair))).sort() as string[]);
                 setTrades(filtered);
             } else { setTrades([]); }
@@ -99,7 +96,14 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
         setCompliance(comp);
         setEditPnL(t.pnl || 0);
         setEditExitPrice(t.exit_price || 0);
+        setTempImgLink(""); // Xóa trắng ô input ảnh
         setSelectedTrade(t);
+    };
+
+    const handleAddImage = () => {
+        if (!tempImgLink) return;
+        setResultImages([...resultImages, tempImgLink]);
+        setTempImgLink("");
     };
 
     const handleSave = async () => {
@@ -111,7 +115,6 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
             const finalCompliance = { score, items: safeItems };
             const packData = { lessons: reviewData.lessons, mistakes: mistakes, action_plan: reviewData.action_plan, _trade_class: tradeClass, _compliance: finalCompliance };
             
-            // Ép thẳng lên mây bằng đường ống update của Kịch bản
             const updatePayload = {
                 input: {
                     uuid: selectedTrade.uuid,
@@ -128,12 +131,13 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
             });
             
             if (res.ok) {
-                toast.success(`Saved! PnL Updated: $${editPnL}`);
+                toast.success(`Đã lưu sổ cái! PnL: $${editPnL}`);
                 loadData(); setSelectedTrade(null);
             } else {
-                toast.error("Save Failed.");
+                const err = await res.json();
+                toast.error("Lỗi từ mây: " + (err.error || "Unknown"));
             }
-        } catch (e) { toast.error("Save error: " + e); }
+        } catch (e) { toast.error("Đứt cáp quang: " + e); }
     };
 
     const handleComplianceCheck = (rule: string) => { setCompliance(prev => ({ ...prev, items: { ...(prev.items || {}), [rule]: !prev.items?.[rule] } })); };
@@ -270,8 +274,22 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
                                     </div>
                                     <div style={{ flex: 1 }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
-                                            <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#64748b' }}>RESULT (Dán link ảnh vào đây)</div>
+                                            <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#64748b' }}>RESULT (Dán link ảnh Discord/Imgur vào đây)</div>
                                         </div>
+                                        
+                                        {/* CÁI LỖ NHÉT LINK ẢNH ĐÃ ĐƯỢC KHÔI PHỤC */}
+                                        <div style={{ display: 'flex', gap: '5px', marginBottom: '10px' }}>
+                                            <input 
+                                                type="text" 
+                                                placeholder="https://imgur.com/xyz.png" 
+                                                value={tempImgLink}
+                                                onChange={(e) => setTempImgLink(e.target.value)}
+                                                onKeyDown={(e) => { if (e.key === 'Enter') handleAddImage(); }}
+                                                style={{ flex: 1, padding: '6px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }}
+                                            />
+                                            <button onClick={handleAddImage} style={{ background: '#2563eb', color: 'white', border: 'none', padding: '0 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>ADD</button>
+                                        </div>
+
                                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '8px' }}>
                                             {resultImages.map((path: string, i: number) => (
                                                 <div key={i} style={{ height: '80px', borderRadius: '4px', overflow: 'hidden', border: '1px solid #e2e8f0', position: 'relative' }}>

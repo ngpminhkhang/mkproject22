@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Save, RefreshCw, Plus, Trash2, Search, X, Brain, Edit3, Lightbulb, AlertTriangle } from 'lucide-react';
+import { Save, RefreshCw, Search, X, Brain, Edit3, Lightbulb, AlertTriangle, Plus, Trash2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
 import toast, { Toaster } from 'react-hot-toast';
 
@@ -25,10 +25,6 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
     const [fusionScore, setFusionScore] = useState(5);
     const [details, setDetails] = useState<any>(DEFAULT_DETAILS);
 
-    const [showMissedForm, setShowMissedForm] = useState(false);
-    const [editingItem, setEditingItem] = useState<any | null>(null);
-    const [missedForm, setMissedForm] = useState<any>({ pair: "EURUSD", direction: "BUY", setup_type: "", missed_date: currentWeek, reason: "Hesitation", notes: "", image_paths: "[]" });
-
     const [showPsyForm, setShowPsyForm] = useState(false);
     const [editingPsyItem, setEditingPsyItem] = useState<any | null>(null);
     const [psyForm, setPsyForm] = useState({ emotion: "Normal", context: "Pre-Trade", note: "" });
@@ -37,28 +33,23 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
         setIsLoading(true);
         try {
             const baseUrl = "https://mk-project19-1.onrender.com/api";
-            
-            // 1. Load Tất cả Scenarios
             const scenRes = await fetch(`${baseUrl}/scenarios/?accountId=${accountId}`);
             const allScenarios = await scenRes.json();
             
             if (Array.isArray(allScenarios)) {
-                // Trades đã chốt
-                const closedList = allScenarios.filter((x: any) => x.status === 'CLOSED').map((x: any) => {
+                const closedList = allScenarios.filter((x: any) => x.status === 'CLOSED' || x.status === 'ARCHIVED').map((x: any) => {
                     let m = 'None';
                     try { const rd = safeJSONParse(x.review_data, {}); if (rd.mistakes && rd.mistakes.length > 0) m = rd.mistakes[0]; } catch {}
                     return { ...x, outcome: x.pnl > 0 ? 'win' : 'loss', mistake: m, pnl: Number(x.pnl) || 0 };
                 });
                 setTrades(closedList);
 
-                // Lệnh hụt tự động
                 const autoMissed = allScenarios.filter((x: any) => ['MISSED', 'CANCELLED'].includes(x.status)).map((x: any) => ({
                     uuid: x.uuid, pair: x.pair, direction: x.direction, reason: x.status, notes: x.analysis_details || "", images: x.images, created_at: x.created_at, source_type: 'scenario'
                 }));
                 setMissedTrades(autoMissed);
             }
 
-            // 2. Load Review
             const revRes = await fetch(`${baseUrl}/reviews/?week_start=${currentWeek}`);
             if (revRes.ok) {
                 const rev = await revRes.json();
@@ -66,12 +57,9 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                     setFaScore(rev.fa_accuracy); setTaScore(rev.ta_accuracy); setFusionScore(rev.fusion_score);
                     const parsedDetails = safeJSONParse(rev.review_details, DEFAULT_DETAILS);
                     setDetails({ ...DEFAULT_DETAILS, ...parsedDetails, habits: { ...DEFAULT_HABITS, ...(parsedDetails.habits || {}) }, psy_notes: parsedDetails.psy_notes || [] });
-                } else {
-                    setFaScore(5); setTaScore(5); setFusionScore(5); setDetails(DEFAULT_DETAILS);
-                }
+                } else { setFaScore(5); setTaScore(5); setFusionScore(5); setDetails(DEFAULT_DETAILS); }
             }
 
-            // 3. Load Outlook
             const outRes = await fetch(`${baseUrl}/outlook/current/?week_start=${currentWeek}`);
             if (outRes.ok) {
                 const out = await outRes.json();
@@ -81,7 +69,6 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                 }
             }
 
-            // 4. Load Library
             const libRes = await fetch(`${baseUrl}/library/?category=SETUP`);
             if (libRes.ok) setSetups(await libRes.json());
 
@@ -103,12 +90,17 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                 review_details: JSON.stringify(details)
             };
 
-            await fetch("https://mk-project19-1.onrender.com/api/reviews/", {
+            const res = await fetch("https://mk-project19-1.onrender.com/api/reviews/", {
                 method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
             });
 
-            toast.success("Saved Review & Updated Plan!");
-        } catch (e) { toast.error("Save error: " + e); }
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || "Django từ chối nhận lệnh");
+            }
+
+            toast.success("Hồ sơ thẩm vấn đã được cất vào két!");
+        } catch (e) { toast.error("Cáp quang đứt: " + String(e)); }
     };
 
     const handleSavePsyNote = () => {
@@ -173,20 +165,20 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
     const totalPnl = trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0);
     const winRate = trades.length > 0 ? ((trades.filter(t => t.outcome === 'win').length / trades.length) * 100).toFixed(1) : 0;
 
-    if (isLoading) return <div style={{ padding: '50px', textAlign: 'center', color: '#64748b' }}>Loading...</div>;
+    if (isLoading) return <div style={{ padding: '50px', textAlign: 'center', color: '#64748b' }}>Đang bốc hồ sơ từ Két Sắt...</div>;
 
     return (
         <div style={{ height: 'calc(100vh - 80px)', display: 'flex', flexDirection: 'column', gap: '20px', fontFamily: 'Segoe UI' }}>
             <Toaster position="top-right" />
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px', background: 'white', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                <div><h1 style={{ margin: 0, fontSize: '20px', color: '#1e293b' }}>Weekly Review Hub</h1><p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}> Fusion: Plan vs Reality</p></div>
+                <div><h1 style={{ margin: 0, fontSize: '20px', color: '#1e293b' }}>System Audit Hub</h1><p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}> Fusion: Plan vs Reality</p></div>
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: '#f1f5f9', padding: '5px 10px', borderRadius: '6px' }}>
                         <span style={{ fontSize: '11px', color: '#64748b' }}>START:</span>
                         <input type="date" value={currentWeek} onChange={(e) => { const d = new Date(e.target.value); if (!isNaN(d.getTime())) setCurrentWeek(getMonday(d)); }} style={{ border: 'none', background: 'transparent', fontWeight: 'bold', outline: 'none', cursor: 'pointer', fontFamily: 'inherit' }} />
                     </div>
                     <button onClick={loadData} style={{ background: 'white', border: '1px solid #cbd5e1', padding: '8px', borderRadius: '6px', cursor: 'pointer' }}><RefreshCw size={18} /></button>
-                    <button onClick={handleSaveReview} style={{ background: '#2563eb', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '6px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}><Save size={18} /> Save</button>
+                    <button onClick={handleSaveReview} style={{ background: '#2563eb', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '6px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}><Save size={18} /> Đóng dấu hồ sơ</button>
                 </div>
             </div>
 
@@ -205,11 +197,11 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                                 <span style={{ fontSize: '11px', fontWeight: 'bold', padding: '2px 8px', borderRadius: '4px', background: '#dcfce7', color: '#166534' }}>{outlookSnapshot.bias}</span>
                             </div>
                             <div style={{ marginBottom: '10px' }}>
-                                <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#3b82f6', marginBottom: '4px' }}>TECHNICAL PLAN (EDITABLE)</div>
-                                <textarea value={outlookSnapshot.technical} onChange={e => setOutlookSnapshot({ ...outlookSnapshot, technical: e.target.value })} style={{ width: '100%', minHeight: '60px', padding: '8px', borderRadius: '4px', border: '1px solid #bfdbfe', fontSize: '13px', color: '#334155', fontFamily: 'inherit', resize: 'vertical' }} placeholder="Nếu chưa nhập bên Outlook, hãy nhập kế hoạch kỹ thuật vào đây..." />
+                                <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#3b82f6', marginBottom: '4px' }}>TECHNICAL PLAN</div>
+                                <textarea value={outlookSnapshot.technical} onChange={e => setOutlookSnapshot({ ...outlookSnapshot, technical: e.target.value })} style={{ width: '100%', minHeight: '60px', padding: '8px', borderRadius: '4px', border: '1px solid #bfdbfe', fontSize: '13px', color: '#334155', fontFamily: 'inherit', resize: 'vertical' }} placeholder="Nhập kế hoạch kỹ thuật vào đây..." />
                             </div>
                             <div>
-                                <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#2563eb', marginBottom: '4px' }}>EXECUTION SCRIPT (EDITABLE)</div>
+                                <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#2563eb', marginBottom: '4px' }}>EXECUTION SCRIPT</div>
                                 <textarea value={outlookSnapshot.plan} onChange={e => setOutlookSnapshot({ ...outlookSnapshot, plan: e.target.value })} style={{ width: '100%', minHeight: '60px', padding: '8px', borderRadius: '4px', border: '1px solid #bfdbfe', fontSize: '13px', color: '#334155', fontFamily: 'monospace', resize: 'vertical' }} placeholder="Kịch bản hành động..." />
                             </div>
                         </div>
@@ -256,25 +248,25 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', height: '100%', overflow: 'hidden' }}>
                     <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0', overflowY: 'auto' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
-                            <h3 style={{ margin: 0 }}>Missed / Cancelled (Auto-Synced)</h3>
+                            <h3 style={{ margin: 0 }}>Những kẻ đào ngũ (Bị hủy/Lỡ chuyến đò)</h3>
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                            {missedTrades.length === 0 ? <div style={{color: '#94a3b8'}}>Không có lệnh nào bị hủy.</div> : missedTrades.map(m => (
+                            {missedTrades.length === 0 ? <div style={{color: '#94a3b8'}}>Không có lệnh nào bị hủy. Kỷ luật tuyệt đối!</div> : missedTrades.map(m => (
                                 <div key={m.uuid} style={{ padding: '10px', borderLeft: `4px solid ${m.source_type === 'manual' ? '#f97316' : '#64748b'}`, background: '#fff', border: '1px solid #e2e8f0', borderRadius: '4px' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                         <strong>{m.pair} <span style={{ fontSize: '11px', color: '#64748b' }}>({m.direction})</span></strong>
                                         <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
-                                            <span style={{ fontSize: '10px', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>{m.reason}</span>
+                                            <span style={{ fontSize: '10px', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>{m.reason}</span>
                                         </div>
                                     </div>
-                                    <div style={{ fontSize: '13px', fontStyle: 'italic', margin: '5px 0' }}>{m.notes || m.analysis_details || "Chưa có ghi chú."}</div>
+                                    <div style={{ fontSize: '13px', fontStyle: 'italic', margin: '5px 0', color: '#64748b' }}>{m.notes || m.analysis_details || "Chưa có ghi chú biện minh."}</div>
                                 </div>
                             ))}
                         </div>
                     </div>
                     <div style={{ background: '#fff7ed', borderRadius: '8px', border: '1px solid #fed7aa', padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                        <h3 style={{ margin: 0, color: '#c2410c' }}><Lightbulb size={20} /> Opp. Cost</h3>
-                        {missedAnalytics ? (<><div><h4 style={{ fontSize: '12px', color: '#9a3412' }}>REASONS</h4><ResponsiveContainer width="100%" height={150}><BarChart data={missedAnalytics.chartData} layout="vertical"><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={80} style={{ fontSize: '11px' }} /><Tooltip /><Bar dataKey="count" fill="#f97316" radius={[0, 4, 4, 0]} /></BarChart></ResponsiveContainer></div><p style={{ margin: 0, fontSize: '13px', fontStyle: 'italic', color: '#431407' }}>"{missedAnalytics.insight}"</p></>) : <div>No Data</div>}
+                        <h3 style={{ margin: 0, color: '#c2410c' }}><Lightbulb size={20} /> Opp. Cost (Chi phí cơ hội)</h3>
+                        {missedAnalytics ? (<><div><h4 style={{ fontSize: '12px', color: '#9a3412' }}>LÝ DO HỦY LỆNH</h4><ResponsiveContainer width="100%" height={150}><BarChart data={missedAnalytics.chartData} layout="vertical"><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={80} style={{ fontSize: '11px' }} /><Tooltip /><Bar dataKey="count" fill="#f97316" radius={[0, 4, 4, 0]} /></BarChart></ResponsiveContainer></div><p style={{ margin: 0, fontSize: '13px', fontStyle: 'italic', color: '#431407' }}>"{missedAnalytics.insight}"</p></>) : <div>No Data</div>}
                     </div>
                 </div>
             )}
