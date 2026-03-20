@@ -160,8 +160,8 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                 const updatePayload = {
                     input: {
                         uuid: editingMissedItem.uuid,
-                        analysis_details: { notes: missedForm.notes }, // Gửi object nguyên bản
-                        images: missedForm.image_paths // Gửi array nguyên bản
+                        analysis_details: { notes: missedForm.notes }, 
+                        images: missedForm.image_paths 
                     }
                 };
                 await fetch(`${baseUrl}/update/`, {
@@ -190,8 +190,8 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                     body: JSON.stringify({
                         input: { 
                             uuid: newUuid, 
-                            analysis_details: { notes: missedForm.notes }, // Gửi object nguyên bản
-                            images: missedForm.image_paths // Gửi array nguyên bản
+                            analysis_details: { notes: missedForm.notes }, 
+                            images: missedForm.image_paths 
                         }
                     })
                 });
@@ -353,8 +353,8 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
 
             {activeTab === 'deep-dive' && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', height: '100%', minHeight: '300px' }}>
-                    <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}><h3 style={{ margin: 0, marginBottom: '15px', color: '#dc2626', fontSize: '14px' }}>COST OF MISTAKES ($)</h3>{mistakeData.length > 0 ? (<ResponsiveContainer width="100%" height={250}><PieChart><Pie data={mistakeData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">{mistakeData.map((_entry, index) => <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />)}</Pie><Tooltip /><Legend /></PieChart></ResponsiveContainer>) : <div style={{ color: '#94a3b8', textAlign: 'center' }}>No Data</div>}</div>
-                    <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}><h3 style={{ margin: 0, marginBottom: '15px', color: '#2563eb', fontSize: '14px' }}>PNL BY SETUP</h3>{setupData.length > 0 ? (<ResponsiveContainer width="100%" height={250}><BarChart data={setupData}><XAxis dataKey="name" style={{ fontSize: '10px' }} /><YAxis /><Tooltip /><Bar dataKey="pnl" fill="#10b981" /></BarChart></ResponsiveContainer>) : <div style={{ color: '#94a3b8', textAlign: 'center' }}>No Data</div>}</div>
+                    <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}><h3 style={{ margin: 0, marginBottom: '15px', color: '#dc2626', fontSize: '14px' }}>COST OF MISTAKES ($)</h3>{mistakeData.length > 0 ? (<ResponsiveContainer width="100%" height={250} minWidth={1} minHeight={1}><PieChart><Pie data={mistakeData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">{mistakeData.map((_entry, index) => <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />)}</Pie><Tooltip /><Legend /></PieChart></ResponsiveContainer>) : <div style={{ color: '#94a3b8', textAlign: 'center' }}>No Data</div>}</div>
+                    <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}><h3 style={{ margin: 0, marginBottom: '15px', color: '#2563eb', fontSize: '14px' }}>PNL BY SETUP</h3>{setupData.length > 0 ? (<ResponsiveContainer width="100%" height={250} minWidth={1} minHeight={1}><BarChart data={setupData}><XAxis dataKey="name" style={{ fontSize: '10px' }} /><YAxis /><Tooltip /><Bar dataKey="pnl" fill="#10b981" /></BarChart></ResponsiveContainer>) : <div style={{ color: '#94a3b8', textAlign: 'center' }}>No Data</div>}</div>
                 </div>
             )}
 
@@ -438,7 +438,7 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                     </div>
                     <div style={{ background: '#fff7ed', borderRadius: '8px', border: '1px solid #fed7aa', padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                         <h3 style={{ margin: 0, color: '#c2410c' }}><Lightbulb size={20} /> Opp. Cost (Chi phí cơ hội)</h3>
-                        {missedAnalytics ? (<><div><h4 style={{ fontSize: '12px', color: '#9a3412' }}>LÝ DO HỦY LỆNH</h4><ResponsiveContainer width="100%" height={150}><BarChart data={missedAnalytics.chartData} layout="vertical"><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={80} style={{ fontSize: '11px' }} /><Tooltip /><Bar dataKey="count" fill="#f97316" radius={[0, 4, 4, 0]} /></BarChart></ResponsiveContainer></div><p style={{ margin: 0, fontSize: '13px', fontStyle: 'italic', color: '#431407' }}>"{missedAnalytics.insight}"</p></>) : <div>No Data</div>}
+                        {missedAnalytics ? (<><div><h4 style={{ fontSize: '12px', color: '#9a3412' }}>LÝ DO HỦY LỆNH</h4><ResponsiveContainer width="100%" height={150} minWidth={1} minHeight={1}><BarChart data={missedAnalytics.chartData} layout="vertical"><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={80} style={{ fontSize: '11px' }} /><Tooltip /><Bar dataKey="count" fill="#f97316" radius={[0, 4, 4, 0]} /></BarChart></ResponsiveContainer></div><p style={{ margin: 0, fontSize: '13px', fontStyle: 'italic', color: '#431407' }}>"{missedAnalytics.insight}"</p></>) : <div>No Data</div>}
                     </div>
                 </div>
             )}
@@ -486,7 +486,7 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                             <>
                                 <div style={{ flex: 1, minHeight: '150px', position: 'relative' }}>
                                     <h4 style={{ fontSize: '12px', color: '#6b21a8', margin: '0 0 10px 0', textAlign: 'center' }}>EMOTION BREAKDOWN</h4>
-                                    <ResponsiveContainer width="100%" height="100%">
+                                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                         <PieChart key={psyAnalytics.total + Math.random()}>
                                             <Pie data={psyAnalytics.chartData} cx="50%" cy="50%" innerRadius={50} outerRadius={70} paddingAngle={5} dataKey="value">
                                                 {psyAnalytics.chartData.map((_entry, index) => <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />)}
