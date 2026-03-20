@@ -7,22 +7,12 @@ const DEFAULT_HABITS = { sleep: false, meditate: false, checklist: false, workou
 const DEFAULT_DETAILS = { stress: 5, focus: 5, discipline: 5, journal_narrative: "", habits: DEFAULT_HABITS, psy_notes: [] };
 const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
-// [KHIÊN TITAN: BỘ GIẢI MÃ KHÔNG BAO GIỜ SẬP]
-const parseDeep = (val: any, fallback: any = {}): any => {
-    if (val === null || val === undefined) return fallback;
+// BỘ ĐỌC DỮ LIỆU THÔNG MINH
+const safeRead = (val: any, fallback: any = {}) => {
+    if (!val) return fallback;
     if (typeof val === 'object') return val;
-    if (typeof val === 'string') {
-        if (val === "" || val === "[]" || val === "{}") return fallback;
-        try {
-            const p = JSON.parse(val);
-            if (typeof p === 'string') return parseDeep(p, fallback);
-            return p;
-        } catch (e) { return fallback; }
-    }
-    return fallback;
+    try { return JSON.parse(val); } catch { return fallback; }
 };
-const ensureArray = (val: any) => Array.isArray(val) ? val : [];
-const ensureObject = (val: any) => (typeof val === 'object' && val !== null && !Array.isArray(val)) ? val : {};
 
 const getMonday = (d: Date) => { const date = new Date(d); const day = date.getDay(); const diff = date.getDate() - day + (day === 0 ? -6 : 1); date.setDate(diff); date.setHours(0, 0, 0, 0); const offset = date.getTimezoneOffset(); return new Date(date.getTime() - (offset * 60000)).toISOString().split('T')[0]; };
 
@@ -35,6 +25,7 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
     const [missedTrades, setMissedTrades] = useState<any[]>([]);
     const [setups, setSetups] = useState<any[]>([]);
     const [outlookSnapshot, setOutlookSnapshot] = useState<{ bias: string, plan: string, technical: string, matrix: any[] }>({ bias: '...', plan: '...', technical: '...', matrix: [] });
+    const [rawFaBias, setRawFaBias] = useState<any>({}); // GIỮ LẠI DỮ LIỆU CŨ ĐỂ KHÔNG BỊ GHI ĐÈ
 
     const [faScore, setFaScore] = useState(5);
     const [taScore, setTaScore] = useState(5);
@@ -52,25 +43,23 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
         setIsLoading(true);
         try {
             const baseUrl = "https://mk-project19-1.onrender.com/api";
-            // [CHỐNG ĐÔNG CACHE]
             const scenRes = await fetch(`${baseUrl}/scenarios/?accountId=${accountId}&t=${Date.now()}`);
             const allScenarios = await scenRes.json();
             
             if (Array.isArray(allScenarios)) {
                 const closedList = allScenarios.filter((x: any) => x.status === 'CLOSED' || x.status === 'ARCHIVED').map((x: any) => {
                     let m = 'None';
-                    try { const rd = ensureObject(parseDeep(x.review_data)); if (rd.mistakes && Array.isArray(rd.mistakes) && rd.mistakes.length > 0) m = rd.mistakes[0]; } catch {}
+                    try { const rd = safeRead(x.review_data); if (rd.mistakes && Array.isArray(rd.mistakes) && rd.mistakes.length > 0) m = rd.mistakes[0]; } catch {}
                     return { ...x, outcome: x.pnl > 0 ? 'win' : 'loss', mistake: m, pnl: Number(x.pnl) || 0 };
                 });
                 setTrades(closedList);
 
-                // Dùng hàm parseDeep moi ruột dữ liệu, cấm hiện dấu {}
+                // Moi ruột ghi chú ra
                 const autoMissed = allScenarios.filter((x: any) => ['MISSED', 'CANCELLED'].includes(x.status)).map((x: any) => {
-                    const parsedNotes = parseDeep(x.analysis_details);
-                    const finalNotes = parsedNotes.notes ? parsedNotes.notes : (typeof x.analysis_details === 'string' ? x.analysis_details : "");
+                    const parsedNotes = safeRead(x.analysis_details);
                     return {
                         uuid: x.uuid, pair: x.pair, direction: x.direction, reason: x.status, 
-                        notes: finalNotes === "{}" ? "" : finalNotes,
+                        notes: parsedNotes.notes || "",
                         images: x.images, created_at: x.created_at
                     };
                 });
@@ -82,7 +71,7 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                 const rev = await revRes.json();
                 if (rev.fa_accuracy) {
                     setFaScore(rev.fa_accuracy); setTaScore(rev.ta_accuracy); setFusionScore(rev.fusion_score);
-                    const parsedDetails = ensureObject(parseDeep(rev.review_details, DEFAULT_DETAILS));
+                    const parsedDetails = safeRead(rev.review_details, DEFAULT_DETAILS);
                     setDetails({ ...DEFAULT_DETAILS, ...parsedDetails, habits: { ...DEFAULT_HABITS, ...(parsedDetails.habits || {}) }, psy_notes: parsedDetails.psy_notes || [] });
                 } else { setFaScore(5); setTaScore(5); setFusionScore(5); setDetails(DEFAULT_DETAILS); }
             }
@@ -91,7 +80,8 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
             if (outRes.ok) {
                 const out = await outRes.json();
                 if (!out.error) {
-                    const fa = ensureObject(parseDeep(out.fa_bias, {}));
+                    const fa = safeRead(out.fa_bias, {});
+                    setRawFaBias(fa); // Cất vào kho
                     setOutlookSnapshot({ 
                         bias: out.weekly_bias || "NEUTRAL", 
                         plan: out.execution_script || "", 
@@ -126,7 +116,13 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                 method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
             });
 
-            // LƯU ĐỒNG THỜI TECHNICAL PLAN VÀO OUTLOOK BẰNG CHUỖI GỐC
+            // GHÉP THÔNG MINH: Lấy data cũ, nối data mới vào để không mất Matrix
+            const updatedFaBias = {
+                ...rawFaBias,
+                planned: outlookSnapshot.matrix,
+                technical_plan: outlookSnapshot.technical
+            };
+
             await fetch("https://mk-project19-1.onrender.com/api/outlook/sync/", {
                 method: "POST", headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -134,10 +130,7 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                     market_sentiment: outlookSnapshot.bias, 
                     weekly_bias: outlookSnapshot.bias,
                     execution_script: outlookSnapshot.plan,
-                    fa_bias: JSON.stringify({
-                        planned: outlookSnapshot.matrix,
-                        technical_plan: outlookSnapshot.technical 
-                    })
+                    fa_bias: JSON.stringify(updatedFaBias)
                 })
             });
 
@@ -151,8 +144,7 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
             const updatePayload = {
                 input: {
                     uuid: editingMissedItem.uuid,
-                    // [FORCE STRINGIFY] Đập thẳng chuỗi này để tránh lỗi Object
-                    analysis_details: JSON.stringify({ notes: missedNote }) 
+                    analysis_details: { notes: missedNote } // Object thuần khiết
                 }
             };
             
