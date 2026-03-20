@@ -29,6 +29,10 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
     const [editingPsyItem, setEditingPsyItem] = useState<any | null>(null);
     const [psyForm, setPsyForm] = useState({ emotion: "Normal", context: "Pre-Trade", note: "" });
 
+    // State cho Form Note Missed
+    const [editingMissedItem, setEditingMissedItem] = useState<any | null>(null);
+    const [missedNote, setMissedNote] = useState("");
+
     const loadData = async () => {
         setIsLoading(true);
         try {
@@ -44,8 +48,9 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                 });
                 setTrades(closedList);
 
+                // Gom chung Missed và Cancelled
                 const autoMissed = allScenarios.filter((x: any) => ['MISSED', 'CANCELLED'].includes(x.status)).map((x: any) => ({
-                    uuid: x.uuid, pair: x.pair, direction: x.direction, reason: x.status, notes: x.analysis_details || "", images: x.images, created_at: x.created_at, source_type: 'scenario'
+                    uuid: x.uuid, pair: x.pair, direction: x.direction, reason: x.status, notes: x.analysis_details || "", images: x.images, created_at: x.created_at
                 }));
                 setMissedTrades(autoMissed);
             }
@@ -101,6 +106,34 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
 
             toast.success("Hồ sơ thẩm vấn đã được cất vào két!");
         } catch (e) { toast.error("Cáp quang đứt: " + String(e)); }
+    };
+
+    // --- XỬ LÝ LƯU GHI CHÚ CHO LỆNH MISSED ---
+    const handleSaveMissedNote = async () => {
+        if (!editingMissedItem) return;
+        try {
+            const updatePayload = {
+                input: {
+                    uuid: editingMissedItem.uuid,
+                    analysis_details: missedNote // Đẩy thẳng vào cột này
+                }
+            };
+            
+            const res = await fetch("https://mk-project19-1.onrender.com/api/scenarios/update/", {
+                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updatePayload)
+            });
+
+            if (res.ok) {
+                toast.success("Đã ghi nhận bài học sương máu!");
+                setEditingMissedItem(null);
+                setMissedNote("");
+                loadData();
+            } else {
+                toast.error("Lỗi từ máy chủ!");
+            }
+        } catch (e) {
+            toast.error("Lỗi cáp quang: " + e);
+        }
     };
 
     const handleSavePsyNote = () => {
@@ -252,14 +285,31 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                             {missedTrades.length === 0 ? <div style={{color: '#94a3b8'}}>Không có lệnh nào bị hủy. Kỷ luật tuyệt đối!</div> : missedTrades.map(m => (
-                                <div key={m.uuid} style={{ padding: '10px', borderLeft: `4px solid ${m.source_type === 'manual' ? '#f97316' : '#64748b'}`, background: '#fff', border: '1px solid #e2e8f0', borderRadius: '4px' }}>
+                                <div key={m.uuid} style={{ padding: '10px', borderLeft: `4px solid ${m.reason === 'CANCELLED' ? '#ef4444' : '#f59e0b'}`, background: '#fff', border: '1px solid #e2e8f0', borderRadius: '4px' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                         <strong>{m.pair} <span style={{ fontSize: '11px', color: '#64748b' }}>({m.direction})</span></strong>
                                         <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
                                             <span style={{ fontSize: '10px', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>{m.reason}</span>
+                                            {/* NÚT EDIT GHI CHÚ */}
+                                            <button onClick={() => { setEditingMissedItem(m); setMissedNote(m.notes); }} style={{ color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer' }}><Edit3 size={14} /></button>
                                         </div>
                                     </div>
-                                    <div style={{ fontSize: '13px', fontStyle: 'italic', margin: '5px 0', color: '#64748b' }}>{m.notes || m.analysis_details || "Chưa có ghi chú biện minh."}</div>
+                                    
+                                    {/* NẾU ĐANG BẤM EDIT, HIỆN Ô NHẬP LÝ DO LÊN ĐÂY */}
+                                    {editingMissedItem?.uuid === m.uuid ? (
+                                        <div style={{ marginTop: '10px', display: 'flex', gap: '5px' }}>
+                                            <input 
+                                                value={missedNote} 
+                                                onChange={e => setMissedNote(e.target.value)} 
+                                                placeholder="Tại sao lại bỏ lỡ / hủy lệnh này?" 
+                                                style={{ flex: 1, padding: '4px 8px', fontSize: '12px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                                            />
+                                            <button onClick={handleSaveMissedNote} style={{ background: '#2563eb', color: 'white', border: 'none', padding: '4px 10px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Lưu</button>
+                                            <button onClick={() => setEditingMissedItem(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}><X size={14} color="#ef4444" /></button>
+                                        </div>
+                                    ) : (
+                                        <div style={{ fontSize: '13px', fontStyle: 'italic', margin: '5px 0', color: '#64748b' }}>{m.notes || "Chưa có ghi chú biện minh."}</div>
+                                    )}
                                 </div>
                             ))}
                         </div>

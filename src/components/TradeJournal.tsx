@@ -9,7 +9,7 @@ interface Trade {
     analysis_details: string; pre_trade_checklist: string; images: string;
     review_data: string; result_images: string; created_at: number;
     htf_trend?: string; market_phase?: string; narrative?: string; scenario_type?: string;
-    compliance_data?: string; trade_class?: string; root_cause?: string;
+    trade_class?: string; root_cause?: string;
 }
 interface ComplianceData { score: number; items: { [key: string]: boolean }; }
 
@@ -64,8 +64,6 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
     const [tradeClass, setTradeClass] = useState("");
     const [mistakes, setMistakes] = useState<string[]>([]);
     const [resultImages, setResultImages] = useState<string[]>([]);
-    
-    // BIẾN LƯU LINK ẢNH TẠM THỜI
     const [tempImgLink, setTempImgLink] = useState("");
 
     const loadData = async () => {
@@ -85,18 +83,19 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
 
     useEffect(() => { loadData(); }, [accountId, dateFrom, dateTo, filterOutcome, filterPair]);
 
+    // [FIX CHÍ TỬ] Đọc đúng dữ liệu Compliance từ cục review_data
     const openReview = (t: Trade) => {
         const rev = safeJSONParse(t.review_data, {});
-        const comp = safeJSONParse(t.compliance_data, { score: 0, items: {} });
+        const comp = rev._compliance || { score: 0, items: {} }; 
+        
         setReviewData({ lessons: rev.lessons || "", action_plan: rev.action_plan || "" });
         setMistakes(rev.mistakes || []);
         setTradeClass(t.trade_class || rev._trade_class || "");
         setResultImages(safeJSONParse(t.result_images, []));
-        if (!comp.items) comp.items = {};
         setCompliance(comp);
         setEditPnL(t.pnl || 0);
         setEditExitPrice(t.exit_price || 0);
-        setTempImgLink(""); // Xóa trắng ô input ảnh
+        setTempImgLink("");
         setSelectedTrade(t);
     };
 
@@ -113,7 +112,15 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
             const checkedCount = Object.values(safeItems).filter(Boolean).length;
             const score = Math.round((checkedCount / COMPLIANCE_RULES.length) * 100);
             const finalCompliance = { score, items: safeItems };
-            const packData = { lessons: reviewData.lessons, mistakes: mistakes, action_plan: reviewData.action_plan, _trade_class: tradeClass, _compliance: finalCompliance };
+            
+            // Gom chung vào 1 cục review_data
+            const packData = { 
+                lessons: reviewData.lessons, 
+                mistakes: mistakes, 
+                action_plan: reviewData.action_plan, 
+                _trade_class: tradeClass, 
+                _compliance: finalCompliance 
+            };
             
             const updatePayload = {
                 input: {
@@ -131,11 +138,10 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
             });
             
             if (res.ok) {
-                toast.success(`Đã lưu sổ cái! PnL: $${editPnL}`);
+                toast.success(`Đã đóng dấu hồ sơ! PnL: $${editPnL}`);
                 loadData(); setSelectedTrade(null);
             } else {
-                const err = await res.json();
-                toast.error("Lỗi từ mây: " + (err.error || "Unknown"));
+                toast.error("Lỗi máy chủ Django!");
             }
         } catch (e) { toast.error("Đứt cáp quang: " + e); }
     };
@@ -277,7 +283,6 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
                                             <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#64748b' }}>RESULT (Dán link ảnh Discord/Imgur vào đây)</div>
                                         </div>
                                         
-                                        {/* CÁI LỖ NHÉT LINK ẢNH ĐÃ ĐƯỢC KHÔI PHỤC */}
                                         <div style={{ display: 'flex', gap: '5px', marginBottom: '10px' }}>
                                             <input 
                                                 type="text" 
