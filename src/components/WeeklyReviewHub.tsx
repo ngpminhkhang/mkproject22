@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Save, RefreshCw, Search, X, Brain, Edit3, Lightbulb, AlertTriangle, Plus, Trash2 } from 'lucide-react';
+import { Save, RefreshCw, Search, X, Brain, Edit3, Lightbulb, AlertTriangle, Plus, Trash2, Camera } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
 import toast, { Toaster } from 'react-hot-toast';
 
@@ -7,12 +7,36 @@ const DEFAULT_HABITS = { sleep: false, meditate: false, checklist: false, workou
 const DEFAULT_DETAILS = { stress: 5, focus: 5, discipline: 5, journal_narrative: "", habits: DEFAULT_HABITS, psy_notes: [] };
 const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
-// BỘ ĐỌC DỮ LIỆU THÔNG MINH
-const safeRead = (val: any, fallback: any = {}) => {
-    if (!val) return fallback;
+// KHIÊN TITAN
+const parseDeep = (val: any, fallback: any = {}): any => {
+    if (val === null || val === undefined) return fallback;
     if (typeof val === 'object') return val;
-    try { return JSON.parse(val); } catch { return fallback; }
+    if (typeof val === 'string') {
+        const trimmed = val.trim();
+        if (trimmed === "" || trimmed === "[]" || trimmed === "{}") return fallback;
+        try {
+            const p = JSON.parse(trimmed);
+            if (typeof p === 'string') return parseDeep(p, fallback);
+            return p;
+        } catch (e) { return fallback; }
+    }
+    return fallback;
 };
+const ensureArray = (val: any) => Array.isArray(val) ? val : [];
+const ensureObject = (val: any) => (typeof val === 'object' && val !== null && !Array.isArray(val)) ? val : {};
+
+const extractNotesText = (raw: any) => {
+    const parsed = parseDeep(raw);
+    if (parsed && typeof parsed === 'object') {
+        if (parsed.notes !== undefined) return parsed.notes;
+        if (parsed.exit_strats) return `Exit Plans: ${parsed.exit_strats.join(', ')}`;
+        return "";
+    }
+    if (typeof parsed === 'string') return parsed;
+    return "";
+};
+
+const inputStyleBase = { padding: '8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px', outline: 'none', flex: 1 };
 
 const getMonday = (d: Date) => { const date = new Date(d); const day = date.getDay(); const diff = date.getDate() - day + (day === 0 ? -6 : 1); date.setDate(diff); date.setHours(0, 0, 0, 0); const offset = date.getTimezoneOffset(); return new Date(date.getTime() - (offset * 60000)).toISOString().split('T')[0]; };
 
@@ -25,7 +49,6 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
     const [missedTrades, setMissedTrades] = useState<any[]>([]);
     const [setups, setSetups] = useState<any[]>([]);
     const [outlookSnapshot, setOutlookSnapshot] = useState<{ bias: string, plan: string, technical: string, matrix: any[] }>({ bias: '...', plan: '...', technical: '...', matrix: [] });
-    const [rawFaBias, setRawFaBias] = useState<any>({}); // GIỮ LẠI DỮ LIỆU CŨ ĐỂ KHÔNG BỊ GHI ĐÈ
 
     const [faScore, setFaScore] = useState(5);
     const [taScore, setTaScore] = useState(5);
@@ -36,8 +59,12 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
     const [editingPsyItem, setEditingPsyItem] = useState<any | null>(null);
     const [psyForm, setPsyForm] = useState({ emotion: "Normal", context: "Pre-Trade", note: "" });
 
+    // State cho Form Missed
+    const [showMissedForm, setShowMissedForm] = useState(false);
     const [editingMissedItem, setEditingMissedItem] = useState<any | null>(null);
-    const [missedNote, setMissedNote] = useState("");
+    const [missedForm, setMissedForm] = useState({ pair: "EURUSD", direction: "BUY", reason: "Hesitation", notes: "", image_paths: [] as string[] });
+    const [showImgInput, setShowImgInput] = useState(false);
+    const [tempImgLink, setTempImgLink] = useState("");
 
     const loadData = async () => {
         setIsLoading(true);
@@ -49,21 +76,21 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
             if (Array.isArray(allScenarios)) {
                 const closedList = allScenarios.filter((x: any) => x.status === 'CLOSED' || x.status === 'ARCHIVED').map((x: any) => {
                     let m = 'None';
-                    try { const rd = safeRead(x.review_data); if (rd.mistakes && Array.isArray(rd.mistakes) && rd.mistakes.length > 0) m = rd.mistakes[0]; } catch {}
+                    try { const rd = ensureObject(parseDeep(x.review_data)); if (rd.mistakes && Array.isArray(rd.mistakes) && rd.mistakes.length > 0) m = rd.mistakes[0]; } catch {}
                     return { ...x, outcome: x.pnl > 0 ? 'win' : 'loss', mistake: m, pnl: Number(x.pnl) || 0 };
                 });
                 setTrades(closedList);
 
-                // Moi ruột ghi chú ra
                 const autoMissed = allScenarios.filter((x: any) => ['MISSED', 'CANCELLED'].includes(x.status)).map((x: any) => {
-                    const parsedNotes = safeRead(x.analysis_details);
                     return {
                         uuid: x.uuid, pair: x.pair, direction: x.direction, reason: x.status, 
-                        notes: parsedNotes.notes || "",
+                        notes: extractNotesText(x.analysis_details),
+                        raw_analysis: x.analysis_details, // Giữ lại nguyên gốc để không bị đè mất khi update
                         images: x.images, created_at: x.created_at
                     };
                 });
-                setMissedTrades(autoMissed);
+                // Sort mới nhất lên đầu
+                setMissedTrades(autoMissed.sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
             }
 
             const revRes = await fetch(`${baseUrl}/reviews/?week_start=${currentWeek}&t=${Date.now()}`);
@@ -71,7 +98,7 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                 const rev = await revRes.json();
                 if (rev.fa_accuracy) {
                     setFaScore(rev.fa_accuracy); setTaScore(rev.ta_accuracy); setFusionScore(rev.fusion_score);
-                    const parsedDetails = safeRead(rev.review_details, DEFAULT_DETAILS);
+                    const parsedDetails = ensureObject(parseDeep(rev.review_details, DEFAULT_DETAILS));
                     setDetails({ ...DEFAULT_DETAILS, ...parsedDetails, habits: { ...DEFAULT_HABITS, ...(parsedDetails.habits || {}) }, psy_notes: parsedDetails.psy_notes || [] });
                 } else { setFaScore(5); setTaScore(5); setFusionScore(5); setDetails(DEFAULT_DETAILS); }
             }
@@ -80,8 +107,7 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
             if (outRes.ok) {
                 const out = await outRes.json();
                 if (!out.error) {
-                    const fa = safeRead(out.fa_bias, {});
-                    setRawFaBias(fa); // Cất vào kho
+                    const fa = ensureObject(parseDeep(out.fa_bias, {}));
                     setOutlookSnapshot({ 
                         bias: out.weekly_bias || "NEUTRAL", 
                         plan: out.execution_script || "", 
@@ -109,62 +135,91 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                 week_start_date: currentWeek, account_id: accountId, total_trades: trades.length,
                 win_rate: trades.length > 0 ? (wins / trades.length) * 100 : 0, net_pnl: netPnl,
                 fa_accuracy: faScore, ta_accuracy: taScore, fusion_score: fusionScore,
-                review_details: JSON.stringify(details)
+                review_details: JSON.stringify(details) // Thằng WeeklyReview xài models.TextField nên phải stringify
             };
 
             await fetch("https://mk-project19-1.onrender.com/api/reviews/", {
                 method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
             });
 
-            // GHÉP THÔNG MINH: Lấy data cũ, nối data mới vào để không mất Matrix
-            const updatedFaBias = {
-                ...rawFaBias,
-                planned: outlookSnapshot.matrix,
-                technical_plan: outlookSnapshot.technical
-            };
-
-            await fetch("https://mk-project19-1.onrender.com/api/outlook/sync/", {
-                method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    week_start: currentWeek,
-                    market_sentiment: outlookSnapshot.bias, 
-                    weekly_bias: outlookSnapshot.bias,
-                    execution_script: outlookSnapshot.plan,
-                    fa_bias: JSON.stringify(updatedFaBias)
-                })
-            });
-
             toast.success("Hồ sơ thẩm vấn đã được cất vào két!");
         } catch (e) { toast.error("Cáp quang đứt: " + String(e)); }
     };
 
-    const handleSaveMissedNote = async () => {
-        if (!editingMissedItem) return;
-        try {
-            const updatePayload = {
-                input: {
-                    uuid: editingMissedItem.uuid,
-                    analysis_details: { notes: missedNote } // Object thuần khiết
-                }
-            };
-            
-            const res = await fetch("https://mk-project19-1.onrender.com/api/scenarios/update/", {
-                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updatePayload)
-            });
+    // --- HỆ THỐNG XỬ LÝ MISSED/CANCELLED THÔNG MINH ---
+    const openAddMissed = () => {
+        setEditingMissedItem(null);
+        setMissedForm({ pair: "EURUSD", direction: "BUY", reason: "Hesitation", notes: "", image_paths: [] });
+        setShowMissedForm(true);
+    };
 
-            if (res.ok) {
-                toast.success("Đã ghi nhận bài học sương máu!");
-                setEditingMissedItem(null);
-                setMissedNote("");
-                await loadData();
+    const handleSaveMissedNote = async () => {
+        try {
+            const baseUrl = "https://mk-project19-1.onrender.com/api/scenarios";
+            
+            if (editingMissedItem) {
+                // CẬP NHẬT GHI CHÚ
+                const existingData = ensureObject(parseDeep(editingMissedItem.raw_analysis));
+                const updatePayload = {
+                    input: {
+                        uuid: editingMissedItem.uuid,
+                        analysis_details: { ...existingData, notes: missedForm.notes, reason: missedForm.reason } 
+                    }
+                };
+                
+                await fetch(`${baseUrl}/update/`, {
+                    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updatePayload)
+                });
             } else {
-                toast.error("Lỗi từ máy chủ Django!");
+                // TẠO LỆNH MANUAL MISSED MỚI TINH
+                const createRes = await fetch(`${baseUrl}/create/`, {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        input: {
+                            pair: missedForm.pair, direction: missedForm.direction, outlook_id: `WEEK-${currentWeek}`,
+                            account_id: accountId, entry_price: 0, sl_price: 0, tp_price: 0, volume: 0
+                        }
+                    })
+                });
+                const createData = await createRes.json();
+                const newUuid = createData.uuid;
+
+                // Gắn nhãn Missed
+                await fetch(`${baseUrl}/status/`, {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ uuid: newUuid, status: "MISSED" })
+                });
+
+                // Nhồi ghi chú
+                await fetch(`${baseUrl}/update/`, {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        input: { uuid: newUuid, analysis_details: { notes: missedForm.notes, reason: missedForm.reason } }
+                    })
+                });
             }
+
+            toast.success("Đã ghi nhận bài học sương máu!");
+            setShowMissedForm(false);
+            setEditingMissedItem(null);
+            await loadData();
         } catch (e) {
             toast.error("Lỗi cáp quang: " + e);
         }
     };
 
+    const handleDeleteMissed = async (uuid: string) => {
+        if (!confirm("Sếp muốn phi tang hồ sơ này?")) return;
+        try {
+            await fetch("https://mk-project19-1.onrender.com/api/scenarios/delete/", {
+                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uuid })
+            });
+            toast.success("Đã ném vào máy hủy tài liệu!");
+            loadData();
+        } catch (e) { toast.error("Lỗi: " + e); }
+    };
+
+    // --- PSYCHOLOGY ---
     const handleSavePsyNote = () => {
         if (!psyForm.note) return toast.error("Ghi chút gì đi sếp!");
         let updatedNotes = [...(details.psy_notes || [])];
@@ -308,35 +363,68 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
 
             {activeTab === 'missed' && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', height: '100%', overflow: 'hidden' }}>
-                    <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0', overflowY: 'auto' }}>
+                    <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0', overflowY: 'auto', position: 'relative' }}>
+                        
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
                             <h3 style={{ margin: 0 }}>Những kẻ đào ngũ (Bị hủy/Lỡ chuyến đò)</h3>
+                            <button onClick={openAddMissed} style={{ padding: '5px 10px', background: 'white', border: '1px solid #cbd5e1', borderRadius: '4px', cursor: 'pointer', display: 'flex', gap: '4px', alignItems: 'center' }}><Plus size={14}/> Add Manual</button>
                         </div>
+
+                        {/* FORM ĐÚNG CHUẨN UI SẾP YÊU CẦU */}
+                        {showMissedForm && (
+                            <div style={{ background: 'white', padding: '15px', borderRadius: '8px', border: '1px solid #bae6fd', marginBottom: '15px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', color: '#0369a1', fontWeight: 'bold' }}>
+                                    {editingMissedItem ? "Update Note" : "Add New"}
+                                    <button onClick={() => setShowMissedForm(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={16} /></button>
+                                </div>
+                                <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+                                    <input value={missedForm.pair} onChange={e => setMissedForm({...missedForm, pair: e.target.value})} style={inputStyleBase} placeholder="Pair (VD: EURUSD)" disabled={!!editingMissedItem} />
+                                    <select value={missedForm.direction} onChange={e => setMissedForm({...missedForm, direction: e.target.value})} style={inputStyleBase} disabled={!!editingMissedItem}>
+                                        <option value="BUY">BUY</option><option value="SELL">SELL</option>
+                                    </select>
+                                </div>
+                                <select value={missedForm.reason} onChange={e => setMissedForm({...missedForm, reason: e.target.value})} style={{...inputStyleBase, width: '100%', marginBottom: '10px'}} disabled={!!editingMissedItem}>
+                                    <option value="Hesitation">Hesitation</option>
+                                    <option value="Spread">Spread</option>
+                                    <option value="Sleep">Sleep</option>
+                                    <option value="MISSED">Missed</option>
+                                    <option value="CANCELLED">Cancelled</option>
+                                </select>
+                                <textarea value={missedForm.notes} onChange={e => setMissedForm({...missedForm, notes: e.target.value})} placeholder="Ghi chú bài học..." style={{...inputStyleBase, width: '100%', marginBottom: '10px', resize: 'vertical', minHeight: '60px'}} />
+                                
+                                {showImgInput && (
+                                    <div style={{display: 'flex', gap: '5px', marginBottom: '10px'}}>
+                                        <input value={tempImgLink} onChange={e => setTempImgLink(e.target.value)} placeholder="Dán link ảnh vào đây..." style={inputStyleBase} />
+                                        <button onClick={() => { setMissedForm({...missedForm, image_paths: [...missedForm.image_paths, tempImgLink]}); setTempImgLink(""); }} style={{ background: '#cbd5e1', border: 'none', padding: '0 10px', borderRadius: '4px', cursor: 'pointer'}}>Add Link</button>
+                                    </div>
+                                )}
+                                
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <button onClick={() => setShowImgInput(!showImgInput)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><Camera size={18} /></button>
+                                    <button onClick={handleSaveMissedNote} style={{ background: '#2563eb', color: 'white', padding: '6px 20px', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>Save</button>
+                                </div>
+                            </div>
+                        )}
+
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                             {missedTrades.length === 0 ? <div style={{color: '#94a3b8'}}>Không có lệnh nào bị hủy. Kỷ luật tuyệt đối!</div> : missedTrades.map(m => (
                                 <div key={m.uuid} style={{ padding: '10px', borderLeft: `4px solid ${m.reason === 'CANCELLED' ? '#ef4444' : '#f59e0b'}`, background: '#fff', border: '1px solid #e2e8f0', borderRadius: '4px' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                        <strong>{m.pair} <span style={{ fontSize: '11px', color: '#64748b' }}>({m.direction})</span></strong>
+                                        <div>
+                                            <strong>{m.pair} <span style={{ fontSize: '11px', color: '#64748b' }}>({m.direction})</span></strong>
+                                            <div style={{ fontSize: '10px', color: '#94a3b8' }}>Auto (Scenario)</div>
+                                        </div>
                                         <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
                                             <span style={{ fontSize: '10px', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>{m.reason}</span>
-                                            <button onClick={() => { setEditingMissedItem(m); setMissedNote(m.notes); }} style={{ color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer' }}><Edit3 size={14} /></button>
+                                            <button onClick={() => { 
+                                                setEditingMissedItem(m); 
+                                                setMissedForm({ pair: m.pair, direction: m.direction, reason: m.reason, notes: m.notes, image_paths: [] }); 
+                                                setShowMissedForm(true); 
+                                            }} style={{ color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer' }}><Edit3 size={14} /></button>
+                                            <button onClick={() => handleDeleteMissed(m.uuid)} style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }}><Trash2 size={14} /></button>
                                         </div>
                                     </div>
-                                    
-                                    {editingMissedItem?.uuid === m.uuid ? (
-                                        <div style={{ marginTop: '10px', display: 'flex', gap: '5px' }}>
-                                            <input 
-                                                value={missedNote} 
-                                                onChange={e => setMissedNote(e.target.value)} 
-                                                placeholder="Tại sao lại bỏ lỡ / hủy lệnh này?" 
-                                                style={{ flex: 1, padding: '4px 8px', fontSize: '12px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
-                                            />
-                                            <button onClick={handleSaveMissedNote} style={{ background: '#2563eb', color: 'white', border: 'none', padding: '4px 10px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Lưu</button>
-                                            <button onClick={() => setEditingMissedItem(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}><X size={14} color="#ef4444" /></button>
-                                        </div>
-                                    ) : (
-                                        <div style={{ fontSize: '13px', fontStyle: 'italic', margin: '5px 0', color: '#64748b' }}>{m.notes || "Chưa có ghi chú biện minh."}</div>
-                                    )}
+                                    <div style={{ fontSize: '13px', fontStyle: 'italic', margin: '5px 0', color: '#64748b' }}>{m.notes || "Chưa có ghi chú biện minh."}</div>
                                 </div>
                             ))}
                         </div>
