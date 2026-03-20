@@ -105,7 +105,6 @@ const RiskField = ({ label, value, onChange, isOverRisk, color }: any) => (
     </div>
 );
 
-// Ảnh chạy trên Web, không xài Tauri Base64 nữa
 const MT5Thumbnail = ({ path }: { path: string }) => {
     if (!path) return null;
     return <img src={path} style={{ width: 40, height: 30, objectFit: 'cover', borderRadius: 4, border: '1px solid #e2e8f0', cursor: 'zoom-in' }} onError={(e) => e.currentTarget.style.display = 'none'} alt="thumb" />
@@ -124,8 +123,9 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
     const [isEditMode, setIsEditMode] = useState(false);
     const [portfolioState, setPortfolioState] = useState<{ mode: string, current_usd_bias: number, account_status: string, account_weight: number, total_equity: number } | null>(null);
     
-    // THE NEW MACRO OUTLOOK PIPELINE
+    // === MACRO PIPELINE ===
     const [outlookData, setOutlookData] = useState({ sentiment: 'MIXED', bias: 'NEUTRAL' });
+    const [plannedPairs, setPlannedPairs] = useState<string[]>([]); // CHỨA CÁC NÚT BẤM QUICK-SELECT
     const [myMood, setMyMood] = useState("FOCUSED");
 
     const [form, setForm] = useState<ScenarioInput>({ pair: "XAUUSD", direction: "BUY", entry_price: 0, sl_price: 0, tp_price: 0, volume: 0 });
@@ -143,7 +143,6 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
     const [isAddingExit, setIsAddingExit] = useState(false);
     const [isAddingTag, setIsAddingTag] = useState(false);
 
-    // BỘ MÁY HÚT DỮ LIỆU (DÙNG FETCH, THAY THẾ TOÀN BỘ INVOKE)
     const loadInitialData = async () => {
         try {
             const currentWeek = getMondayLocal(new Date());
@@ -170,8 +169,15 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
             if (!scenarioType && typesStr && typesStr.length > 0) setScenarioType(typesStr[0].title);
             if (Array.isArray(risksStr)) setRiskProfiles(risksStr.map((r: any) => ({ id: r.id, title: r.title, configuration: r.configuration || "{}" })));
             
+            // HÚT DỮ LIỆU TỪ OUTLOOK VÀ TẠO QUICK-SELECT CHIPS
             if (outRes && !outRes.error) {
                 setOutlookData({ sentiment: outRes.market_sentiment || 'MIXED', bias: outRes.weekly_bias || 'NEUTRAL' });
+                try {
+                    const fa = JSON.parse(outRes.fa_bias || "{}");
+                    if (fa.planned && Array.isArray(fa.planned)) {
+                        setPlannedPairs(fa.planned);
+                    }
+                } catch (e) { console.error("Parse FA Bias failed", e); }
             }
 
             if (ceoStateStr.account_weight >= 0) {
@@ -228,7 +234,6 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
     }, [form.pair, form.direction, outlookData.bias]);
 
     const riskCalc = useMemo(() => {
-        // GIAO THỨC KHAI HỎA KHẨN CẤP
         if (orderType === "MARKET") {
             const panicRisk = accountBalance * 0.02; // Khóa 2%
             return { safeLots: 999, riskAmt: panicRisk, rr: 0, riskDisplay: "PANIC OVERRIDE (MAX 2% RISK)" };
@@ -273,7 +278,6 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
     const checklistScore = Object.values(checklist).filter(Boolean).length;
     const requiredTicks = hasChecklist ? Math.ceil(dynamicChecklistItems.length * 0.7) : 0;
     
-    // Combine Score and Checklist for Stage 2
     const isStage2Valid = (!hasChecklist || checklistScore >= requiredTicks) && Object.keys(signalScores).length === SIGNAL_FEATURES.length && selectedSetupId !== null;
     const isExitValid = exitStrats.length > 0;
 
@@ -360,10 +364,8 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
         try {
             const type = orderType === "MARKET" ? (scenarioData.direction === "BUY" ? "ORDER_TYPE_BUY" : "ORDER_TYPE_SELL") : `${scenarioData.direction}_${orderType}`;
             
-            // 1. Lưu UI trạng thái PENDING_EXEC
             await fetch("https://mk-project19-1.onrender.com/api/scenarios/execute/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scenarioUuid: scenarioData.uuid, orderType: type }) });
 
-            // 2. ỐNG XẢ KÉP: Bắn MT5
             const resMt5 = await fetch("https://mk-project19-1.onrender.com/api/mt5/direct_fire/", {
                 method: "POST", headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ ticker: scenarioData.pair, direction: scenarioData.direction, volume: scenarioData.volume })
@@ -451,7 +453,7 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
 
             <div style={{ ...styles.column, flex: 1 }}>
                 
-                {/* THANH TOP BAR HIỆN THỊ OUTLOOK */}
+                {/* THANH TOP BAR HIỆN THỊ OUTLOOK VÀ QUICK-SELECT */}
                 <div style={{ padding: '15px 25px', background: 'white', borderBottom: '1px solid #e2e8f0', display: 'flex', gap: '25px', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
                         <select value={form.pair} onChange={e => setForm({ ...form, pair: e.target.value })} style={{ fontSize: '18px', fontWeight: 'bold', padding: '10px 15px', borderRadius: '10px', border: '1px solid #cbd5e1', width: '140px', outline: 'none' }}>
@@ -463,25 +465,48 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
                         </div>
                     </div>
 
-                    <div style={{ display: 'flex', gap: '30px', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', gap: '20px', alignItems: 'center', flexWrap: 'wrap' }}>
                         <div style={{ textAlign: 'center' }}>
-                            <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Market Sentiment</div>
+                            <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Sentiment</div>
                             <div style={{ fontSize: '16px', fontWeight: 900, color: '#0f172a' }}>{outlookData.sentiment}</div>
                         </div>
 
                         <div style={{ textAlign: 'center' }}>
                             <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>My Mood</div>
                             <select value={myMood} onChange={e => setMyMood(e.target.value)} style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', fontWeight: 'bold', outline: 'none', color: '#059669', background: '#f0fdf4' }}>
-                                <option value="FOCUSED">🧘‍♂️ FOCUSED (Bình tĩnh)</option>
-                                <option value="FOMO">🔥 FOMO (Hưng phấn)</option>
-                                <option value="REVENGE">🤬 REVENGE (Cay cú)</option>
-                                <option value="TIRED">🥱 TIRED (Mệt mỏi)</option>
+                                <option value="FOCUSED">🧘‍♂️ FOCUSED</option>
+                                <option value="FOMO">🔥 FOMO</option>
+                                <option value="REVENGE">🤬 REVENGE</option>
+                                <option value="TIRED">🥱 TIRED</option>
                             </select>
                         </div>
 
-                        <div style={{ textAlign: 'center' }}>
+                        <div style={{ textAlign: 'center', borderRight: '1px solid #e2e8f0', paddingRight: '20px' }}>
                             <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Weekly Bias</div>
                             <div style={{ fontSize: '16px', fontWeight: 900, color: '#d97706', textTransform: 'uppercase' }}>{outlookData.bias}</div>
+                        </div>
+
+                        {/* === QUICK SELECT CHIPS (TỪ OUTLOOK) === */}
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            {plannedPairs.map(p => {
+                                const [sym, dir] = p.split('|');
+                                const cleanSym = sym.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+                                const isBuy = dir.toUpperCase() === 'BUY' || dir.toUpperCase() === 'LONG';
+                                return (
+                                    <button
+                                        key={p}
+                                        onClick={() => setForm({ ...form, pair: cleanSym, direction: isBuy ? "BUY" : "SELL" })}
+                                        style={{
+                                            padding: '6px 12px', borderRadius: '20px', border: `1px solid ${isBuy ? '#bbf7d0' : '#fecaca'}`,
+                                            background: isBuy ? '#f0fdf4' : '#fef2f2', color: isBuy ? '#16a34a' : '#dc2626',
+                                            fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px',
+                                            boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                                        }}
+                                    >
+                                        {cleanSym} {isBuy ? '↑' : '↓'}
+                                    </button>
+                                )
+                            })}
                         </div>
                     </div>
                 </div>
