@@ -38,6 +38,8 @@ export default function MarketMonitor({ onTradeNow }: { onTradeNow: (s: any) => 
     const [cardSettings, setCardSettings] = useState<{ [symbol: string]: string[] }>({});
     const [editingSymbol, setEditingSymbol] = useState<string | null>(null);
     const [dismissedSignals, setDismissedSignals] = useState<string[]>([]);
+    
+    // MẠCH MÁU MỚI: Bảng điện tử Live
     const [activeTrades, setActiveTrades] = useState<any[]>([]);
 
     const getMondayLocal = (d: Date) => {
@@ -75,15 +77,12 @@ export default function MarketMonitor({ onTradeNow }: { onTradeNow: (s: any) => 
         }, 60000);
     };
 
-    // ĐỘNG CƠ HÚT DỮ LIỆU TỪ ĐÁM MÂY (THAY THẾ TAURI INVOKE)
     const syncData = async () => {
         try {
-            // Giả lập trạng thái MT5 (Sếp có thể gắn API check heartbeat thật sau)
             setIsMt5Alive(true); 
-
             const weekDate = getMondayLocal(new Date());
             
-            // 1. Hút Ngọn Hải Đăng để lấy Danh sách rình mồi
+            // 1. Hút Ngọn Hải Đăng
             const outRes = await fetch(`https://mk-project19-1.onrender.com/api/outlook/current/?week_start=${weekDate}`);
             const map = new Map<string, MonitorCardItem>();
             
@@ -103,7 +102,7 @@ export default function MarketMonitor({ onTradeNow }: { onTradeNow: (s: any) => 
                                 });
                             });
                         }
-                    } catch (e) { console.error("Parse Outlook Error", e); }
+                    } catch (e) {}
                 }
             }
 
@@ -127,26 +126,31 @@ export default function MarketMonitor({ onTradeNow }: { onTradeNow: (s: any) => 
                         }
                     });
                 }
-            } catch (e) { /* Bỏ qua nếu Radar rỗng */ }
+            } catch (e) {}
 
             setMonitorList(Array.from(map.values()));
 
-        } catch (e) { console.error(e); setIsMt5Alive(false); }
+            // 3. ỐNG XẢ MỚI: Hút Lệnh đang chạy (ACTIVE EXPOSURE)
+            try {
+                const scenRes = await fetch(`https://mk-project19-1.onrender.com/api/scenarios/?accountId=1`);
+                if (scenRes.ok) {
+                    const allScen = await scenRes.json();
+                    const active = allScen.filter((s: any) => ['PENDING_EXEC', 'ACTIVE', 'FILLED'].includes(s.status));
+                    setActiveTrades(active);
+                }
+            } catch (e) {}
+
+        } catch (e) { setIsMt5Alive(false); }
     };
 
     useEffect(() => {
-        const i = setInterval(syncData, 2000); // Quét 2 giây 1 lần
+        syncData();
+        const i = setInterval(syncData, 5000); 
         return () => clearInterval(i);
     }, [soundEnabled, dismissedSignals]);
 
-    // HÀM CHUYỂN TRANG KHAI HỎA
     const handleTradeClick = (item: MonitorCardItem, activeTags: string[]) => {
-        const payload = {
-            pair: item.symbol,
-            direction: item.bias,
-            reason: `Radar Alert: ${activeTags.join(", ")}`,
-            tags: activeTags
-        };
+        const payload = { pair: item.symbol, direction: item.bias, reason: `Radar Alert: ${activeTags.join(", ")}`, tags: activeTags };
         localStorage.setItem("MFJA_QUICK_TRADE", JSON.stringify(payload));
         if (onTradeNow) onTradeNow(payload);
     };
@@ -281,7 +285,20 @@ export default function MarketMonitor({ onTradeNow }: { onTradeNow: (s: any) => 
                         </div>
                     ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                            {/* Chỗ này sếp tự chèn danh sách lệnh đang chạy vào sau */}
+                            {activeTrades.map(trade => (
+                                <div key={trade.uuid} style={{ padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div>
+                                        <div style={{ fontWeight: '900', color: '#1e293b' }}>{trade.pair}</div>
+                                        <div style={{ fontSize: '12px', color: trade.direction === 'BUY' ? '#16a34a' : '#dc2626', fontWeight: 'bold' }}>{trade.direction} {trade.volume} Lots</div>
+                                    </div>
+                                    <div style={{ textAlign: 'right' }}>
+                                        <div style={{ fontSize: '10px', background: '#dcfce7', color: '#15803d', padding: '2px 6px', borderRadius: '12px', fontWeight: 'bold', display: 'inline-block', marginBottom: '4px' }}>LIVE</div>
+                                        <div style={{ fontSize: '14px', fontWeight: '900', color: (trade.pnl || 0) >= 0 ? '#16a34a' : '#dc2626' }}>
+                                            {(trade.pnl || 0) >= 0 ? '+' : ''}{trade.pnl || 0}$
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     )}
                 </div>

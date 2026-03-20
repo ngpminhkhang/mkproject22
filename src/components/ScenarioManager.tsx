@@ -123,7 +123,6 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
     const [isEditMode, setIsEditMode] = useState(false);
     const [portfolioState, setPortfolioState] = useState<{ mode: string, current_usd_bias: number, account_status: string, account_weight: number, total_equity: number } | null>(null);
     
-    // === MACRO PIPELINE ===
     const [outlookData, setOutlookData] = useState({ sentiment: 'MIXED', bias: 'NEUTRAL' });
     const [plannedPairs, setPlannedPairs] = useState<string[]>([]); 
     const [myMood, setMyMood] = useState("FOCUSED");
@@ -138,6 +137,7 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
     const [selectedRiskProfileId, setSelectedRiskProfileId] = useState<string>("");
     const [orderType, setOrderType] = useState<"LIMIT" | "STOP" | "MARKET">("LIMIT");
     const [exitStrats, setExitStrats] = useState<string[]>([]);
+    const [images, setImages] = useState<string[]>([]);
     const [isManualVolume, setIsManualVolume] = useState(false);
     const [isAddingExit, setIsAddingExit] = useState(false);
     const [isAddingTag, setIsAddingTag] = useState(false);
@@ -309,10 +309,8 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
     const isHalted = portfolioState?.mode === "HALT";
     const isScoreTooLow = totalSignalScore < 60;
     
-    // KHÓA NÒNG KHÁNG CÁO: Xác định xem lệnh này đã được nã chưa
     const currentScenario = scenarios.find(s => s.uuid === activeScenarioId);
     const isAlreadyExecuted = currentScenario ? ['PENDING_EXEC', 'ACTIVE', 'FILLED', 'CLOSED', 'MISSED', 'CANCELLED'].includes(currentScenario.status) : false;
-    
     const disableExecution = !isStage2Valid || isOverRisk || isHalted || isCorrelationBlocked || isFrozen || isAlreadyExecuted;
 
     const loadScenario = (s: ScenarioExtended) => {
@@ -397,7 +395,6 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
         }
     };
 
-    // NÚT TỰ HỦY: Cắt lệnh ngay trên Web
     const handleCloseTrade = async (scenario: ScenarioExtended, e: any) => {
         e.stopPropagation();
         if (!confirm(`TỔNG TƯ LỆNH XÁC NHẬN RÚT QUÂN LỆNH ${scenario.pair}?`)) return;
@@ -411,21 +408,21 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
         }
     };
 
-    const handleMarkStatus = async (uuid: string, status: "MISSED" | "CANCELLED", e: any) => {
+    // FIX CỐT TỬ: Đổi status thành ARCHIVED thay vì xóa DB
+    const handleDelete = async (s: ScenarioExtended, e: any) => {
         e.stopPropagation();
-        const reason = prompt(`Lý do ${status}?`, "");
-        if (reason !== null) {
-            await fetch("https://mk-project19-1.onrender.com/api/scenarios/status/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uuid, status }) });
-            toast.success(`Marked as ${status}`); loadDynamicData();
-        }
-    };
-
-    const handleDelete = async (uuid: string, e: any) => {
-        e.stopPropagation();
-        if (confirm("Xóa vĩnh viễn plan này?")) {
-            await fetch("https://mk-project19-1.onrender.com/api/scenarios/delete/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uuid }) });
-            toast.success("Deleted."); loadDynamicData();
-            if (activeScenarioId === uuid) clearForm();
+        if (['CLOSED', 'FILLED', 'ACTIVE', 'PENDING_EXEC'].includes(s.status)) {
+            if (confirm("Lệnh đã cất vào Sổ cái. Ẩn khỏi danh sách Radar này?")) {
+                await fetch("https://mk-project19-1.onrender.com/api/scenarios/status/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uuid: s.uuid, status: "ARCHIVED" }) });
+                toast.success("Đã cất cẩn thận!"); loadDynamicData();
+                if (activeScenarioId === s.uuid) clearForm();
+            }
+        } else {
+            if (confirm("Lệnh chưa thực thi. Xóa vĩnh viễn plan này?")) {
+                await fetch("https://mk-project19-1.onrender.com/api/scenarios/delete/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uuid: s.uuid }) });
+                toast.success("Deleted."); loadDynamicData();
+                if (activeScenarioId === s.uuid) clearForm();
+            }
         }
     };
 
@@ -441,7 +438,6 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
         return { grade: "F", color: "#dc2626", text: "EXECUTION BLOCKED" };
     }, [totalSignalScore]);
 
-    // GIAO DIỆN TẮC KÈ HOA
     const isRiskOn = outlookData.sentiment === 'Risk-On';
     const isRiskOff = outlookData.sentiment === 'Risk-Off';
     const topBarBg = isRiskOn ? '#dcfce7' : (isRiskOff ? '#fee2e2' : 'white');
@@ -457,14 +453,15 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
             <Toaster position="top-right" />
             <div style={{ ...styles.column, width: '320px' }}>
                 <div style={styles.header('#f8fafc', '#e2e8f0') as any}>
-                    <h3 style={styles.title}><Target size={18} /> PENDING SCENARIOS ({scenarios.filter(s => !['MISSED', 'CANCELLED'].includes(s.status)).length})</h3>
+                    <h3 style={styles.title}><Target size={18} /> PENDING SCENARIOS ({scenarios.filter(s => !['MISSED', 'CANCELLED', 'ARCHIVED'].includes(s.status)).length})</h3>
                     <button onClick={clearForm} style={styles.button}><Plus size={14} /> NEW</button>
                 </div>
                 <div style={{ flex: 1, overflowY: "auto", padding: '12px' }}>
-                    {scenarios.filter(s => !['MISSED', 'CANCELLED'].includes(s.status)).slice(0, 10).map(s => {
+                    {/* BỘ LỌC MỚI: Không hiển thị ARCHIVED, lấy tối đa 20 lệnh thay vì 10 */}
+                    {scenarios.filter(s => !['MISSED', 'CANCELLED', 'ARCHIVED'].includes(s.status)).slice(0, 20).map(s => {
                         const isPending = s.status === 'PENDING';
                         const isLive = ['PENDING_EXEC', 'ACTIVE', 'FILLED'].includes(s.status);
-                        const isClosed = ['CLOSED', 'MISSED', 'CANCELLED'].includes(s.status);
+                        const isClosed = ['CLOSED', 'MISSED', 'CANCELLED', 'ARCHIVED'].includes(s.status);
                         const isSelected = s.uuid === activeScenarioId;
                         let scoreVal = 0;
                         try { const c = JSON.parse(s.pre_trade_checklist || "{}"); scoreVal = c.score || 0; } catch { }
@@ -485,14 +482,13 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
                                         <>
                                             <button onClick={(e) => { e.stopPropagation(); loadScenario(s); triggerExecution(s); }} style={styles.actionBtn('white', '#0f172a')} title="Execute"><Play size={14} /></button>
                                             <button onClick={(e) => { e.stopPropagation(); loadScenario(s); }} style={styles.actionBtn('#1d4ed8', '#eff6ff')} title="Edit"><Edit3 size={14} /></button>
-                                            <button onClick={(e) => handleMarkStatus(s.uuid, "MISSED", e)} style={styles.actionBtn('#d97706', '#fffbeb')} title="Omit"><EyeOff size={14} /></button>
-                                            <button onClick={(e) => handleMarkStatus(s.uuid, "CANCELLED", e)} style={styles.actionBtn('#475569', '#f1f5f9')} title="Cancel"><Ban size={14} /></button>
                                         </>
                                     )}
                                     {isLive && (
                                         <button onClick={(e) => handleCloseTrade(s, e)} style={styles.actionBtn('white', '#ef4444')} title="Close Position"><StopCircle size={14} /></button>
                                     )}
-                                    <button onClick={(e) => handleDelete(s.uuid, e)} style={styles.actionBtn('#ef4444', '#fef2f2')} title="Delete"><Trash2 size={14} /></button>
+                                    {/* Nút Thùng Rác giờ dùng cho cả xóa vĩnh viễn và Archive */}
+                                    <button onClick={(e) => handleDelete(s, e)} style={styles.actionBtn('#ef4444', '#fef2f2')} title={isPending ? "Xóa" : "Ẩn khỏi màn hình"}><Trash2 size={14} /></button>
                                 </div>
                             </div>
                         );
@@ -501,8 +497,6 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
             </div>
 
             <div style={{ ...styles.column, flex: 1 }}>
-                
-                {/* THANH TOP BAR TẮC KÈ HOA */}
                 <div style={{ padding: '15px 25px', background: topBarBg, borderBottom: '1px solid #e2e8f0', display: 'flex', gap: '25px', alignItems: 'center', justifyContent: 'space-between', transition: 'all 0.3s' }}>
                     <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
                         <select value={form.pair} onChange={e => setForm({ ...form, pair: e.target.value })} style={{ fontSize: '18px', fontWeight: 'bold', padding: '10px 15px', borderRadius: '10px', border: '1px solid #cbd5e1', width: '140px', outline: 'none' }}>
@@ -519,7 +513,6 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
                             <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Sentiment</div>
                             <div style={{ fontSize: '16px', fontWeight: 900, color: sentimentColor }}>{outlookData.sentiment}</div>
                         </div>
-
                         <div style={{ textAlign: 'center' }}>
                             <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>My Mood</div>
                             <select value={myMood} onChange={e => setMyMood(e.target.value)} style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', fontWeight: 'bold', outline: 'none', color: '#059669', background: '#f0fdf4' }}>
@@ -529,29 +522,17 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
                                 <option value="TIRED">🥱 TIRED</option>
                             </select>
                         </div>
-
                         <div style={{ textAlign: 'center', borderRight: '1px solid #cbd5e1', paddingRight: '20px' }}>
                             <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Weekly Bias</div>
                             <div style={{ fontSize: '16px', fontWeight: 900, color: biasColor, textTransform: 'uppercase' }}>{outlookData.bias}</div>
                         </div>
-
-                        {/* === QUICK SELECT CHIPS (TỪ OUTLOOK) === */}
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                             {plannedPairs.map(p => {
                                 const [sym, dir] = p.split('|');
                                 const cleanSym = sym.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
                                 const isBuy = dir.toUpperCase() === 'BUY' || dir.toUpperCase() === 'LONG';
                                 return (
-                                    <button
-                                        key={p}
-                                        onClick={() => setForm({ ...form, pair: cleanSym, direction: isBuy ? "BUY" : "SELL" })}
-                                        style={{
-                                            padding: '6px 12px', borderRadius: '20px', border: `1px solid ${isBuy ? '#bbf7d0' : '#fecaca'}`,
-                                            background: isBuy ? '#f0fdf4' : '#fef2f2', color: isBuy ? '#16a34a' : '#dc2626',
-                                            fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px',
-                                            boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
-                                        }}
-                                    >
+                                    <button key={p} onClick={() => setForm({ ...form, pair: cleanSym, direction: isBuy ? "BUY" : "SELL" })} style={{ padding: '6px 12px', borderRadius: '20px', border: `1px solid ${isBuy ? '#bbf7d0' : '#fecaca'}`, background: isBuy ? '#f0fdf4' : '#fef2f2', color: isBuy ? '#16a34a' : '#dc2626', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
                                         {cleanSym} {isBuy ? '↑' : '↓'}
                                     </button>
                                 )
@@ -561,7 +542,6 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
                 </div>
 
                 <div style={{ flex: 1, overflowY: 'auto' }}>
-                    {/* THANH CẢNH BÁO BỘI PHẢN */}
                     {biasCheck.status !== "ALIGNED" && (
                         <div style={{ background: biasCheck.color === '#dc2626' ? '#fef2f2' : '#f8fafc', padding: '10px 25px', borderBottom: `1px dashed ${biasCheck.color}`, color: biasCheck.color, fontWeight: 'bold', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <AlertTriangle size={16} /> LƯU Ý TỪ HẢI ĐĂNG: {biasCheck.text}
@@ -598,7 +578,6 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
                     <SectionHeader title="2. SCENARIO & SETUP" icon={LayoutGrid} isOpen={expandedSection === "SCENARIO"} onClick={() => setExpandedSection("SCENARIO")} sub={isStage2Valid ? "Valid" : "Incomplete"} colorTheme="blue" />
                     {expandedSection === "SCENARIO" && (
                         <div style={{ padding: '25px' }}>
-                            
                             <div style={{ marginBottom: '25px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px dashed #cbd5e1', paddingBottom: '10px' }}>
                                     <span style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b' }}>Algorithmic Assessment</span>
@@ -640,13 +619,9 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
                                     <label style={labelStyle}>Setup Conditions (Dynamic)</label>
                                     <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '8px', border: '1px solid #e2e8f0', maxHeight: '300px', overflowY: 'auto' }}>
                                         {(!selectedSetupId) ? (
-                                            <div style={{ fontSize: '13px', color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', padding: '20px 0' }}>
-                                                Vui lòng chọn 'Main Model' bên cạnh để tải Checklist.
-                                            </div>
+                                            <div style={{ fontSize: '13px', color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', padding: '20px 0' }}>Vui lòng chọn 'Main Model' bên cạnh để tải Checklist.</div>
                                         ) : checklistItems.length === 0 ? (
-                                            <div style={{ fontSize: '13px', color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', padding: '20px 0' }}>
-                                                Setup này chưa có Checklist cấu hình sẵn.
-                                            </div>
+                                            <div style={{ fontSize: '13px', color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', padding: '20px 0' }}>Setup này chưa có Checklist cấu hình sẵn.</div>
                                         ) : (
                                             checklistItems.map((item, i) => (
                                                 <label key={i} style={{ display: 'flex', gap: '10px', fontSize: '13px', marginBottom: '10px', cursor: 'pointer', color: checklist[item] ? '#166534' : '#475569', fontWeight: 500 }}>
@@ -665,9 +640,7 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
                                     <div style={{ marginTop: '25px', padding: '20px', background: isStage2Valid ? '#f0fdf4' : '#fef2f2', borderRadius: '12px', border: isStage2Valid ? '1px solid #bbf7d0' : '1px solid #fecaca', display: 'flex', alignItems: 'center', gap: '15px' }}>
                                         {isStage2Valid ? <CheckCircle2 size={24} color="#16a34a" /> : <Lock size={24} color="#dc2626" />}
                                         <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                            <span style={{ fontSize: '14px', fontWeight: 700, color: isStage2Valid ? '#166534' : '#991b1b' }}>
-                                                {validationMessage}
-                                            </span>
+                                            <span style={{ fontSize: '14px', fontWeight: 700, color: isStage2Valid ? '#166534' : '#991b1b' }}>{validationMessage}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -707,16 +680,9 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
                                         <option value="LIMIT">LIMIT</option><option value="STOP">STOP</option><option value="MARKET">MARKET</option>
                                     </select>
                                 </div>
-                                <PriceInput label={orderType === "MARKET" ? "CURRENT PRICE (EST.)" : "ENTRY PRICE"} 
-                                    value={orderType === "MARKET" ? 0 : form.entry_price} 
-                                    onChange={(v: number) => setForm({ ...form, entry_price: v })} 
-                                    color="#2563eb" disabled={orderType === "MARKET"} placeholder={orderType === "MARKET" ? "Bỏ qua" : "Nhập giá để tính Risk"} />
-                                <PriceInput label={orderType === "MARKET" ? "STOP LOSS (OPTIONAL)" : "STOP LOSS"} 
-                                    value={form.sl_price} onChange={(v: number) => setForm({...form, sl_price: v })} 
-                                    color="#ef4444" disabled={false} />
-                                <PriceInput label={orderType === "MARKET" ? "TAKE PROFIT (OPTIONAL)" : "TAKE PROFIT"} 
-                                    value={form.tp_price} onChange={(v: number) => setForm({ ...form, tp_price: v })} 
-                                    color="#10b981" disabled={false} />
+                                <PriceInput label={orderType === "MARKET" ? "CURRENT PRICE (EST.)" : "ENTRY PRICE"} value={orderType === "MARKET" ? 0 : form.entry_price} onChange={(v: number) => setForm({ ...form, entry_price: v })} color="#2563eb" disabled={orderType === "MARKET"} placeholder={orderType === "MARKET" ? "Bỏ qua" : "Nhập giá để tính Risk"} />
+                                <PriceInput label={orderType === "MARKET" ? "STOP LOSS (OPTIONAL)" : "STOP LOSS"} value={form.sl_price} onChange={(v: number) => setForm({...form, sl_price: v })} color="#ef4444" disabled={false} />
+                                <PriceInput label={orderType === "MARKET" ? "TAKE PROFIT (OPTIONAL)" : "TAKE PROFIT"} value={form.tp_price} onChange={(v: number) => setForm({ ...form, tp_price: v })} color="#10b981" disabled={false} />
                             </div>
 
                             <div style={{ background: '#faf5ff', padding: '25px', borderRadius: '16px', border: '1px solid #f3e8ff', marginBottom: '30px', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' }}>
@@ -764,6 +730,9 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
                                     </div>
                                 )}
                             </div>
+
+                            {isHalted && (<div style={{ background: '#fef2f2', padding: '15px', borderRadius: '10px', color: '#dc2626', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', border: '1px solid #fecaca' }}><Ban size={20} /> LỆNH KÍCH HOẠT HALT TỪ CEO: Hệ thống đang bị ĐÓNG BĂNG. Không thể Execute.</div>)}
+                            {!isHalted && isCorrelationBlocked && (<div style={{ background: '#fffbeb', padding: '15px', borderRadius: '10px', color: '#b45309', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', border: '1px solid #fde68a' }}><AlertTriangle size={20} /> CEO WARNING: Lệnh này vi phạm tỷ lệ Tương quan (Correlation) của Quỹ. Không thể Execute.</div>)}
 
                             <div style={{ display: 'flex', gap: '20px' }}>
                                 <button onClick={() => handleSave(false)} style={styles.bigButton('save', false) as any}><Save size={20} /> SAVE PLAN</button>
