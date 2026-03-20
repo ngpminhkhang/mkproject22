@@ -7,13 +7,21 @@ const DEFAULT_HABITS = { sleep: false, meditate: false, checklist: false, workou
 const DEFAULT_DETAILS = { stress: 5, focus: 5, discipline: 5, journal_narrative: "", habits: DEFAULT_HABITS, psy_notes: [] };
 const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
-// BỘ GIẢI MÃ JSON THÉP
+// BỘ CÔNG CỤ DỌN RÁC DỮ LIỆU
 const safeJSONParse = (val: any, fallback: any) => { 
     if (!val) return fallback; 
     if (typeof val === 'object') return val;
-    try { return JSON.parse(val) || fallback; } catch (e) { return fallback; } 
+    try { const parsed = JSON.parse(val); return parsed || fallback; } catch (e) { return fallback; } 
 };
-
+const extractNotes = (details: any) => {
+    if (!details) return "";
+    if (typeof details === 'string') {
+        if (details === "{}" || details === "[]" || details === '{"notes":""}') return "";
+        try { const parsed = JSON.parse(details); return parsed.notes || details; } catch { return details; }
+    }
+    if (typeof details === 'object') return details.notes || "";
+    return "";
+};
 const getMonday = (d: Date) => { const date = new Date(d); const day = date.getDay(); const diff = date.getDate() - day + (day === 0 ? -6 : 1); date.setDate(diff); date.setHours(0, 0, 0, 0); const offset = date.getTimezoneOffset(); return new Date(date.getTime() - (offset * 60000)).toISOString().split('T')[0]; };
 
 export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number }) {
@@ -42,26 +50,22 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
         setIsLoading(true);
         try {
             const baseUrl = "https://mk-project19-1.onrender.com/api";
-            
-            // [CHỐNG ĐÔNG CACHE]
             const scenRes = await fetch(`${baseUrl}/scenarios/?accountId=${accountId}&t=${Date.now()}`);
             const allScenarios = await scenRes.json();
             
             if (Array.isArray(allScenarios)) {
                 const closedList = allScenarios.filter((x: any) => x.status === 'CLOSED' || x.status === 'ARCHIVED').map((x: any) => {
                     let m = 'None';
-                    try { const rd = safeJSONParse(x.review_data, {}); if (rd.mistakes && rd.mistakes.length > 0) m = rd.mistakes[0]; } catch {}
+                    try { const rd = safeJSONParse(x.review_data, {}); if (rd.mistakes && Array.isArray(rd.mistakes) && rd.mistakes.length > 0) m = rd.mistakes[0]; } catch {}
                     return { ...x, outcome: x.pnl > 0 ? 'win' : 'loss', mistake: m, pnl: Number(x.pnl) || 0 };
                 });
                 setTrades(closedList);
 
-                // FIX LỖI HIỂN THỊ "{}"
+                // Dùng hàm extractNotes để moi ruột dữ liệu ra, cấm hiện dấu {}
                 const autoMissed = allScenarios.filter((x: any) => ['MISSED', 'CANCELLED'].includes(x.status)).map((x: any) => {
-                    const parsedNotes = safeJSONParse(x.analysis_details, {});
-                    const finalNotes = parsedNotes.notes !== undefined ? parsedNotes.notes : (typeof x.analysis_details === 'string' ? x.analysis_details : "");
                     return {
                         uuid: x.uuid, pair: x.pair, direction: x.direction, reason: x.status, 
-                        notes: finalNotes,
+                        notes: extractNotes(x.analysis_details),
                         images: x.images, created_at: x.created_at
                     };
                 });
@@ -86,7 +90,7 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                     setOutlookSnapshot({ 
                         bias: out.weekly_bias || "NEUTRAL", 
                         plan: out.execution_script || "", 
-                        technical: fa.technical_plan || "", // Kéo Technical Plan ra từ đây
+                        technical: fa.technical_plan || "",
                         matrix: Array.isArray(fa.planned) ? fa.planned : [] 
                     });
                 }
@@ -95,7 +99,7 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
             const libRes = await fetch(`${baseUrl}/library/?category=SETUP`);
             if (libRes.ok) setSetups(await libRes.json());
 
-        } catch (e) { toast.error("Error loading: " + String(e)); }
+        } catch (e) { toast.error("Lỗi cáp quang: " + String(e)); }
         setIsLoading(false);
     };
 
@@ -117,7 +121,6 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                 method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
             });
 
-            // LƯU ĐỒNG THỜI TECHNICAL PLAN VÀO BẢNG OUTLOOK
             await fetch("https://mk-project19-1.onrender.com/api/outlook/sync/", {
                 method: "POST", headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -127,7 +130,7 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                     execution_script: outlookSnapshot.plan,
                     fa_bias: JSON.stringify({
                         planned: outlookSnapshot.matrix,
-                        technical_plan: outlookSnapshot.technical // Nhồi thẳng Technical Plan vào đây
+                        technical_plan: outlookSnapshot.technical 
                     })
                 })
             });
@@ -142,7 +145,7 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
             const updatePayload = {
                 input: {
                     uuid: editingMissedItem.uuid,
-                    analysis_details: { notes: missedNote } // Truyền Object thẳng, Django tự nhai
+                    analysis_details: { notes: missedNote } 
                 }
             };
             
@@ -156,7 +159,7 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                 setMissedNote("");
                 await loadData();
             } else {
-                toast.error("Lỗi từ máy chủ!");
+                toast.error("Lỗi từ máy chủ Django!");
             }
         } catch (e) {
             toast.error("Lỗi cáp quang: " + e);

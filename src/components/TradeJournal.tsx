@@ -17,11 +17,22 @@ const COMPLIANCE_RULES = ["Đồng thuận HTF Bias/Trend?", "Setup đúng mẫu
 const TRADE_CLASSES = [{ id: "A+", label: "A+ Setup (Perfect)", color: "#16a34a" }, { id: "B", label: "B Setup (Standard)", color: "#2563eb" }, { id: "GOOD_LOSS", label: "Good Loss (Đúng luật)", color: "#ea580c" }, { id: "BAD_WIN", label: "Bad Win (Ăn may)", color: "#db2777" }, { id: "BAD_LOSS", label: "Bad Loss (Phá luật)", color: "#dc2626" }];
 const MISTAKES_LIST = ["FOMO", "Revenge", "Oversize", "No Plan", "Early Exit", "Moved SL", "Hesitation"];
 
-// BỘ GIẢI MÃ JSON THÉP - KHÔNG BAO GIỜ LỖI
+// [KHIÊN TITAN CHỐNG SẬP REACT]
 const safeJSONParse = (val: any, fallback: any) => { 
     if (!val) return fallback; 
     if (typeof val === 'object') return val;
-    try { return JSON.parse(val); } catch (e) { return fallback; } 
+    try { const parsed = JSON.parse(val); return parsed || fallback; } catch (e) { return fallback; } 
+};
+const ensureArray = (val: any) => Array.isArray(val) ? val : [];
+const ensureObject = (val: any) => (typeof val === 'object' && val !== null && !Array.isArray(val)) ? val : {};
+const extractNotes = (details: any) => {
+    if (!details) return "-";
+    if (typeof details === 'string') {
+        if (details === "{}" || details === "[]" || details === '{"notes":""}') return "-";
+        try { const parsed = JSON.parse(details); return parsed.notes || details; } catch { return details; }
+    }
+    if (typeof details === 'object') return details.notes || "-";
+    return "-";
 };
 
 const StatCard = ({ title, value, sub, color }: any) => (
@@ -74,7 +85,6 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
     const loadData = async () => {
         setLoading(true);
         try {
-            // [CHỐNG ĐÔNG CACHE] Thêm t=Date.now() để ép tải mới 100%
             const res = await fetch(`https://mk-project19-1.onrender.com/api/scenarios/?accountId=${accountId}&t=${Date.now()}`);
             const rawList = await res.json();
             if (Array.isArray(rawList)) {
@@ -90,14 +100,15 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
     useEffect(() => { loadData(); }, [accountId, dateFrom, dateTo, filterOutcome, filterPair]);
 
     const openReview = (t: Trade) => {
-        const rev = safeJSONParse(t.review_data, {});
-        const comp = rev._compliance || { score: 0, items: {} }; 
+        // Ép kiểu dữ liệu tuyệt đối trước khi gán
+        const rev = ensureObject(safeJSONParse(t.review_data, {}));
+        const comp = ensureObject(rev._compliance || { score: 0, items: {} }); 
         
         setReviewData({ lessons: rev.lessons || "", action_plan: rev.action_plan || "" });
-        setMistakes(rev.mistakes || []);
+        setMistakes(ensureArray(rev.mistakes));
         setTradeClass(t.trade_class || rev._trade_class || "");
-        setResultImages(safeJSONParse(t.result_images, []));
-        setCompliance(comp);
+        setResultImages(ensureArray(safeJSONParse(t.result_images, [])));
+        setCompliance({ score: comp.score || 0, items: ensureObject(comp.items) });
         setEditPnL(t.pnl || 0);
         setEditExitPrice(t.exit_price || 0);
         setTempImgLink("");
@@ -113,7 +124,7 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
     const handleSave = async () => {
         if (!selectedTrade) return;
         try {
-            const safeItems = compliance?.items || {};
+            const safeItems = ensureObject(compliance?.items);
             const checkedCount = Object.values(safeItems).filter(Boolean).length;
             const score = Math.round((checkedCount / COMPLIANCE_RULES.length) * 100);
             
@@ -128,7 +139,7 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
             const updatePayload = {
                 input: {
                     uuid: selectedTrade.uuid,
-                    review_data: packData, // Truyền thẳng Object, Django sẽ tự lo
+                    review_data: packData, 
                     result_images: resultImages, 
                     pnl: editPnL,
                     exit_price: editExitPrice
@@ -142,7 +153,7 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
             
             if (res.ok) {
                 toast.success(`Đã lưu sổ cái! PnL: $${editPnL}`);
-                await loadData(); // Load lại mới 100%
+                await loadData();
                 setSelectedTrade(null);
             } else {
                 toast.error("Lỗi máy chủ Django!");
@@ -150,7 +161,7 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
         } catch (e) { toast.error("Đứt cáp quang: " + e); }
     };
 
-    const handleComplianceCheck = (rule: string) => { setCompliance(prev => ({ ...prev, items: { ...(prev.items || {}), [rule]: !prev.items?.[rule] } })); };
+    const handleComplianceCheck = (rule: string) => { setCompliance(prev => ({ ...prev, items: { ...ensureObject(prev.items), [rule]: !prev.items?.[rule] } })); };
 
     const stats = useMemo(() => {
         const wins = trades.filter(t => t.pnl > 0).length;
@@ -189,10 +200,10 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
                 </div>
                 <div style={{ flex: 1, overflowY: 'auto' }}>
                     {trades.map(t => {
-                        const review = safeJSONParse(t.review_data, {});
+                        const review = ensureObject(safeJSONParse(t.review_data, {}));
                         const tradeClass = t.trade_class || review._trade_class || "-";
-                        const mistake = (review.mistakes && review.mistakes[0]) || "-";
-                        const notesObj = safeJSONParse(t.analysis_details, {});
+                        const mistakesArr = ensureArray(review.mistakes);
+                        const mistake = mistakesArr.length > 0 ? mistakesArr[0] : "-";
                         
                         return (
                             <div key={t.uuid} style={{ display: 'grid', gridTemplateColumns: '1fr 0.5fr 0.5fr 0.8fr 0.8fr 1fr 1fr 1.5fr 80px', padding: '12px 20px', borderBottom: '1px solid #f1f5f9', fontSize: '13px', alignItems: 'center' }}>
@@ -206,7 +217,7 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
                                     {tradeClass !== '-' && <span style={{ fontSize: '10px', padding: '2px 4px', border: '1px solid #e2e8f0', borderRadius: '3px', marginRight: '5px', background: '#f8fafc' }}>{tradeClass}</span>}
                                     {mistake !== '-' && <span style={{ fontSize: '10px', color: '#dc2626' }}>{mistake}</span>}
                                 </div>
-                                <div style={{ color: '#64748b', fontStyle: 'italic', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.narrative || notesObj.notes || "-"}</div>
+                                <div style={{ color: '#64748b', fontStyle: 'italic', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.narrative || extractNotes(t.analysis_details)}</div>
                                 <div style={{ textAlign: 'right' }}><button onClick={() => openReview(t)} style={{ padding: '6px 10px', background: '#eff6ff', color: '#2563eb', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}><Eye size={14} /></button></div>
                             </div>
                         )
@@ -249,7 +260,7 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
                                     <h3 style={{ marginTop: 0, fontSize: '14px', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}><ShieldCheck size={18} /> COMPLIANCE SCORE</h3>
                                     <div style={{ marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                                         {(() => {
-                                            const safeItems = compliance?.items || {};
+                                            const safeItems = ensureObject(compliance?.items);
                                             const score = Math.round((Object.values(safeItems).filter(Boolean).length / COMPLIANCE_RULES.length) * 100);
                                             return <div style={{ fontSize: '32px', fontWeight: '900', color: score >= 80 ? '#16a34a' : (score >= 50 ? '#ca8a04' : '#dc2626') }}>{score}%</div>
                                         })()}
@@ -278,10 +289,9 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
                                     <div style={{ marginBottom: '15px' }}>
                                         <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#64748b', marginBottom: '5px' }}>PLAN</div>
                                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '8px' }}>
-                                            {safeJSONParse(selectedTrade.images, []).map((path: string, i: number) => (
+                                            {ensureArray(safeJSONParse(selectedTrade.images, [])).map((path: string, i: number) => (
                                                 <div key={i} style={{ height: '80px', borderRadius: '4px', overflow: 'hidden', border: '1px solid #e2e8f0' }}><SafeImage path={path} onClick={() => setPreviewImg(path)} /></div>
                                             ))}
-                                            {safeJSONParse(selectedTrade.images, []).length === 0 && <div style={{ fontSize: '12px', color: '#cbd5e1', fontStyle: 'italic' }}>No images</div>}
                                         </div>
                                     </div>
                                     <div style={{ flex: 1 }}>
@@ -300,7 +310,7 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
                                         </div>
 
                                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '8px' }}>
-                                            {resultImages.map((path: string, i: number) => (
+                                            {ensureArray(resultImages).map((path: string, i: number) => (
                                                 <div key={i} style={{ height: '80px', borderRadius: '4px', overflow: 'hidden', border: '1px solid #e2e8f0', position: 'relative' }}>
                                                     <SafeImage path={path} onClick={() => setPreviewImg(path)} />
                                                     <button onClick={() => setResultImages(resultImages.filter((_, idx) => idx !== i))} style={{ position: 'absolute', top: 0, right: 0, background: 'red', color: 'white', border: 'none', width: '16px', height: '16px', fontSize: '10px', cursor: 'pointer' }}>x</button>
@@ -311,7 +321,7 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
                                 </div>
                                 <div style={{ background: '#eff6ff', padding: '15px', borderRadius: '12px', border: '1px solid #dbeafe' }}>
                                     <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#1e40af', marginBottom: '5px' }}>CONTEXT</div>
-                                    <div style={{ fontSize: '13px', color: '#1e3a8a', fontStyle: 'italic' }}>"{selectedTrade.narrative || "No narrative."}"</div>
+                                    <div style={{ fontSize: '13px', color: '#1e3a8a', fontStyle: 'italic' }}>"{selectedTrade.narrative || extractNotes(selectedTrade.analysis_details)}"</div>
                                 </div>
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
@@ -319,7 +329,7 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
                                     <h3 style={{ marginTop: 0, fontSize: '14px', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}><AlertOctagon size={18} /> MISTAKES</h3>
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
                                         {MISTAKES_LIST.map(m => (
-                                            <button key={m} onClick={() => { if (mistakes.includes(m)) setMistakes(mistakes.filter(x => x !== m)); else setMistakes([...mistakes, m]); }} style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid', fontSize: '11px', cursor: 'pointer', background: mistakes.includes(m) ? '#fee2e2' : 'white', color: mistakes.includes(m) ? '#991b1b' : '#64748b', borderColor: mistakes.includes(m) ? '#fecaca' : '#e2e8f0' }}>{m}</button>
+                                            <button key={m} onClick={() => { if (ensureArray(mistakes).includes(m)) setMistakes(mistakes.filter(x => x !== m)); else setMistakes([...mistakes, m]); }} style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid', fontSize: '11px', cursor: 'pointer', background: ensureArray(mistakes).includes(m) ? '#fee2e2' : 'white', color: ensureArray(mistakes).includes(m) ? '#991b1b' : '#64748b', borderColor: ensureArray(mistakes).includes(m) ? '#fecaca' : '#e2e8f0' }}>{m}</button>
                                         ))}
                                     </div>
                                 </div>
