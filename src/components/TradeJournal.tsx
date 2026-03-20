@@ -11,40 +11,19 @@ interface Trade {
     htf_trend?: string; market_phase?: string; narrative?: string; scenario_type?: string;
     trade_class?: string; root_cause?: string;
 }
-interface ComplianceData { score: number; items: { [key: string]: boolean }; }
 
 const COMPLIANCE_RULES = ["Đồng thuận HTF Bias/Trend?", "Setup đúng mẫu hình (Library)?", "Entry tại vùng Discount/Premium?", "R:R tối thiểu đạt yêu cầu?", "Không vào lệnh trước tin tức đỏ?", "Tâm lý ổn định (Không Tilt)?"];
 const TRADE_CLASSES = [{ id: "A+", label: "A+ Setup (Perfect)", color: "#16a34a" }, { id: "B", label: "B Setup (Standard)", color: "#2563eb" }, { id: "GOOD_LOSS", label: "Good Loss (Đúng luật)", color: "#ea580c" }, { id: "BAD_WIN", label: "Bad Win (Ăn may)", color: "#db2777" }, { id: "BAD_LOSS", label: "Bad Loss (Phá luật)", color: "#dc2626" }];
 const MISTAKES_LIST = ["FOMO", "Revenge", "Oversize", "No Plan", "Early Exit", "Moved SL", "Hesitation"];
 
-// [KHIÊN TITAN] Máy xay JSON bất chấp mọi thể loại định dạng rác
+// BỘ GIẢI MÃ CHỐNG ĐỘT TỬ
 const parseDeep = (val: any, fallback: any = {}): any => {
-    if (val === null || val === undefined) return fallback;
-    if (typeof val === 'object') return val; 
-    if (typeof val === 'string') {
-        const trimmed = val.trim();
-        if (trimmed === "" || trimmed === "[]" || trimmed === "{}") return fallback;
-        try {
-            const p = JSON.parse(trimmed);
-            if (typeof p === 'string') return parseDeep(p, fallback);
-            return p;
-        } catch (e) { return fallback; }
-    }
-    return fallback;
+    if (!val) return fallback;
+    if (typeof val === 'object') return val;
+    try { const p = JSON.parse(val); return typeof p === 'string' ? JSON.parse(p) : p; } catch (e) { return fallback; }
 };
 const ensureArray = (val: any) => Array.isArray(val) ? val : [];
 const ensureObject = (val: any) => (typeof val === 'object' && val !== null && !Array.isArray(val)) ? val : {};
-
-const extractNotesText = (raw: any) => {
-    const parsed = parseDeep(raw);
-    if (parsed && typeof parsed === 'object') {
-        if (parsed.notes !== undefined) return parsed.notes;
-        if (parsed.exit_strats) return `Exit Plans: ${parsed.exit_strats.join(', ')}`;
-        return "";
-    }
-    if (typeof parsed === 'string') return parsed;
-    return "";
-};
 
 const StatCard = ({ title, value, sub, color }: any) => (
     <div style={{ background: 'white', padding: '15px', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', flex: 1 }}>
@@ -71,12 +50,8 @@ const FullImageModal = ({ path, onClose }: any) => {
 
 export default function TradeJournal({ accountId = 1 }: { accountId?: number }) {
     const [trades, setTrades] = useState<Trade[]>([]);
-    const [loading, setLoading] = useState(false);
-    const date = new Date();
-    const getLocalDate = (d: Date) => { const o = d.getTimezoneOffset() * 60000; return new Date(d.getTime() - o).toISOString().split('T')[0]; };
-    
-    const [dateFrom, setDateFrom] = useState(getLocalDate(new Date(date.getFullYear(), date.getMonth(), 1)));
-    const [dateTo, setDateTo] = useState(getLocalDate(new Date(date.getFullYear(), date.getMonth() + 1, 0)));
+    const [dateFrom, setDateFrom] = useState(() => { const d = new Date(); d.setDate(1); return d.toISOString().split('T')[0]; });
+    const [dateTo, setDateTo] = useState(() => { const d = new Date(); d.setMonth(d.getMonth() + 1, 0); return d.toISOString().split('T')[0]; });
     const [filterPair, setFilterPair] = useState("");
     const [filterOutcome, setFilterOutcome] = useState("ALL");
     const [uniquePairs, setUniquePairs] = useState<string[]>([]);
@@ -87,14 +62,13 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
     const [editExitPrice, setEditExitPrice] = useState<number>(0);
     
     const [reviewData, setReviewData] = useState({ lessons: "", action_plan: "" });
-    const [compliance, setCompliance] = useState<ComplianceData>({ score: 0, items: {} });
+    const [compliance, setCompliance] = useState<{ score: number, items: any }>({ score: 0, items: {} });
     const [tradeClass, setTradeClass] = useState("");
     const [mistakes, setMistakes] = useState<string[]>([]);
     const [resultImages, setResultImages] = useState<string[]>([]);
     const [tempImgLink, setTempImgLink] = useState("");
 
     const loadData = async () => {
-        setLoading(true);
         try {
             const res = await fetch(`https://mk-project19-1.onrender.com/api/scenarios/?accountId=${accountId}&t=${Date.now()}`);
             const rawList = await res.json();
@@ -103,9 +77,8 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
                 if (filterPair !== "") filtered = filtered.filter((t: any) => t.pair === filterPair);
                 if (filterPair === "") setUniquePairs(Array.from(new Set(rawList.map((t: any) => t.pair))).sort() as string[]);
                 setTrades(filtered);
-            } else { setTrades([]); }
+            }
         } catch (e) { toast.error("Load error: " + e); }
-        setLoading(false);
     };
 
     useEffect(() => { loadData(); }, [accountId, dateFrom, dateTo, filterOutcome, filterPair]);
@@ -124,21 +97,19 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
         setTempImgLink("");
         setSelectedTrade(t);
     };
-
     const handleAddImage = () => {
         if (!tempImgLink) return;
         setResultImages([...resultImages, tempImgLink]);
         setTempImgLink("");
     };
-
     const handleSave = async () => {
         if (!selectedTrade) return;
         try {
-            const safeItems = ensureObject(compliance?.items);
+            const safeItems = ensureObject(compliance.items);
             const checkedCount = Object.values(safeItems).filter(Boolean).length;
             const score = Math.round((checkedCount / COMPLIANCE_RULES.length) * 100);
             
-            // [QUAN TRỌNG] Gửi Object thuần túy, tuyệt đối KHÔNG stringify ở đây
+            // [BỌC NILON TUYỆT ĐỐI]
             const packData = { 
                 lessons: reviewData.lessons, 
                 mistakes: mistakes, 
@@ -150,8 +121,8 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
             const updatePayload = {
                 input: {
                     uuid: selectedTrade.uuid,
-                    review_data: packData, 
-                    result_images: resultImages, 
+                    review_data: JSON.stringify(packData), 
+                    result_images: JSON.stringify(resultImages), 
                     pnl: editPnL,
                     exit_price: editExitPrice
                 }
@@ -165,7 +136,7 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
             if (res.ok) {
                 toast.success(`Đã đổ bê tông dữ liệu! PnL: $${editPnL}`);
                 await loadData();
-                // [FIX LỖI MẤT MÀN HÌNH] Đã vô hiệu hóa lệnh đá văng sếp ra ngoài!
+                // Không đã văng ra ngoài nữa!
             } else {
                 toast.error("Lỗi máy chủ Django!");
             }
@@ -194,12 +165,6 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
                         <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ border: '1px solid #e2e8f0', borderRadius: '4px', padding: '4px', fontSize: '11px', outline: 'none' }} />
                         <span style={{ color: '#cbd5e1' }}>-</span>
                         <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ border: '1px solid #e2e8f0', borderRadius: '4px', padding: '4px', fontSize: '11px', outline: 'none' }} />
-                        <select value={filterPair} onChange={e => setFilterPair(e.target.value)} style={{ padding: '4px', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', outline: 'none', maxWidth: '80px' }}>
-                            <option value="">All Pairs</option>{uniquePairs.map(p => <option key={p} value={p}>{p}</option>)}
-                        </select>
-                        <select value={filterOutcome} onChange={e => setFilterOutcome(e.target.value)} style={{ padding: '4px', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', outline: 'none' }}>
-                            <option value="ALL">All</option><option value="WIN">Win</option><option value="LOSS">Loss</option>
-                        </select>
                         <button onClick={loadData} style={{ border: 'none', background: '#f1f5f9', borderRadius: '4px', cursor: 'pointer', padding: '4px', color: '#64748b' }} title="Refresh"><RefreshCw size={14} /></button>
                     </div>
                 </div>
@@ -223,12 +188,12 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
                                 <div style={{ fontFamily: 'monospace' }}>{t.volume}</div>
                                 <div style={{ fontFamily: 'monospace', color: '#2563eb' }}>{t.entry_price}</div>
                                 <div style={{ fontFamily: 'monospace', color: '#64748b' }}>{t.exit_price || '-'}</div>
-                                <div style={{ fontWeight: 'bold', color: (t.pnl || 0) >= 0 ? '#16a34a' : '#dc2626' }}>{(t.pnl || 0) > 0 ? '+' : ''}{Number(t.pnl || 0).toFixed(2)}$</div>
+                                <div style={{ fontWeight: 'bold', color: (t.pnl || 0) >= 0 ? '#16a34a' : '#dc2626' }}>{(t.pnl || 0) > 0 ? '+' : ''}{(t.pnl || 0).toFixed(2)}$</div>
                                 <div>
                                     {tradeClass !== '-' && <span style={{ fontSize: '10px', padding: '2px 4px', border: '1px solid #e2e8f0', borderRadius: '3px', marginRight: '5px', background: '#f8fafc' }}>{tradeClass}</span>}
                                     {mistake !== '-' && <span style={{ fontSize: '10px', color: '#dc2626' }}>{mistake}</span>}
                                 </div>
-                                <div style={{ color: '#64748b', fontStyle: 'italic', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.narrative || extractNotesText(t.analysis_details)}</div>
+                                <div style={{ color: '#64748b', fontStyle: 'italic', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.narrative || "-"}</div>
                                 <div style={{ textAlign: 'right' }}><button onClick={() => openReview(t)} style={{ padding: '6px 10px', background: '#eff6ff', color: '#2563eb', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}><Eye size={14} /></button></div>
                             </div>
                         )
@@ -246,9 +211,6 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
                                     <span style={{ fontSize: '12px', padding: '4px 10px', borderRadius: '20px', background: selectedTrade.direction === 'BUY' ? '#dcfce7' : '#fee2e2', color: selectedTrade.direction === 'BUY' ? '#166534' : '#991b1b' }}>{selectedTrade.direction}</span>
                                 </h2>
                                 <div style={{ display: 'flex', gap: '15px', fontSize: '13px', alignItems: 'center' }}>
-                                    <span>Entry: <b>{selectedTrade.entry_price}</b></span>
-                                    <span style={{ color: '#dc2626' }}>SL: <b>{selectedTrade.sl_price}</b></span>
-                                    <span style={{ color: '#16a34a' }}>TP: <b>{selectedTrade.tp_price}</b></span>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: '#f1f5f9', padding: '4px 8px', borderRadius: '4px' }}>
                                         <span style={{ color: '#64748b', fontSize: '11px', fontWeight: 'bold' }}>EXIT:</span>
                                         <input type="number" step="any" value={editExitPrice} onChange={e => setEditExitPrice(parseFloat(e.target.value) || 0)} style={{ width: '70px', border: 'none', background: 'transparent', fontWeight: 'bold', outline: 'none', borderBottom: '1px dashed #cbd5e1' }} />
@@ -261,7 +223,7 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
                                 </div>
                             </div>
                             <div style={{ display: 'flex', gap: '10px' }}>
-                                <button onClick={handleSave} style={{ background: '#2563eb', color: 'white', border: 'none', padding: '8px 20px', borderRadius: '8px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}><Save size={18} /> SAVE DIAGNOSIS</button>
+                                <button onClick={handleSave} style={{ background: '#2563eb', color: 'white', border: 'none', padding: '8px 20px', borderRadius: '8px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}><Save size={18} /> ĐÓNG DẤU HỒ SƠ</button>
                                 <button onClick={() => setSelectedTrade(null)} style={{ background: 'white', border: '1px solid #cbd5e1', padding: '8px', borderRadius: '8px', cursor: 'pointer', color: '#64748b' }}><X size={18} /></button>
                             </div>
                         </div>
@@ -271,8 +233,7 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
                                     <h3 style={{ marginTop: 0, fontSize: '14px', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}><ShieldCheck size={18} /> COMPLIANCE SCORE</h3>
                                     <div style={{ marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                                         {(() => {
-                                            const safeItems = ensureObject(compliance?.items);
-                                            const score = Math.round((Object.values(safeItems).filter(Boolean).length / COMPLIANCE_RULES.length) * 100);
+                                            const score = Math.round((Object.values(compliance.items).filter(Boolean).length / COMPLIANCE_RULES.length) * 100);
                                             return <div style={{ fontSize: '32px', fontWeight: '900', color: score >= 80 ? '#16a34a' : (score >= 50 ? '#ca8a04' : '#dc2626') }}>{score}%</div>
                                         })()}
                                         <div style={{ fontSize: '12px', color: '#64748b', lineHeight: '1.2' }}>Tuân thủ<br />Kỷ luật</div>
@@ -309,17 +270,10 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
                                             <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#64748b' }}>RESULT (Dán link ảnh Discord/Imgur vào đây)</div>
                                         </div>
-                                        
                                         <div style={{ display: 'flex', gap: '5px', marginBottom: '10px' }}>
-                                            <input 
-                                                type="text" placeholder="https://imgur.com/xyz.png" 
-                                                value={tempImgLink} onChange={(e) => setTempImgLink(e.target.value)}
-                                                onKeyDown={(e) => { if (e.key === 'Enter') handleAddImage(); }}
-                                                style={{ flex: 1, padding: '6px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }}
-                                            />
+                                            <input type="text" placeholder="https://imgur.com/xyz.png" value={tempImgLink} onChange={(e) => setTempImgLink(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { handleAddImage(); } }} style={{ flex: 1, padding: '6px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }} />
                                             <button onClick={handleAddImage} style={{ background: '#2563eb', color: 'white', border: 'none', padding: '0 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>ADD</button>
                                         </div>
-
                                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '8px' }}>
                                             {resultImages.map((path: string, i: number) => (
                                                 <div key={i} style={{ height: '80px', borderRadius: '4px', overflow: 'hidden', border: '1px solid #e2e8f0', position: 'relative' }}>
@@ -332,7 +286,7 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
                                 </div>
                                 <div style={{ background: '#eff6ff', padding: '15px', borderRadius: '12px', border: '1px solid #dbeafe' }}>
                                     <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#1e40af', marginBottom: '5px' }}>CONTEXT</div>
-                                    <div style={{ fontSize: '13px', color: '#1e3a8a', fontStyle: 'italic' }}>"{selectedTrade.narrative || extractNotesText(selectedTrade.analysis_details)}"</div>
+                                    <div style={{ fontSize: '13px', color: '#1e3a8a', fontStyle: 'italic' }}>"{selectedTrade.narrative || "-"}"</div>
                                 </div>
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>

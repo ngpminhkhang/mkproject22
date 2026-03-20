@@ -7,18 +7,14 @@ const DEFAULT_HABITS = { sleep: false, meditate: false, checklist: false, workou
 const DEFAULT_DETAILS = { stress: 5, focus: 5, discipline: 5, journal_narrative: "", habits: DEFAULT_HABITS, psy_notes: [] };
 const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
-// KHIÊN TITAN
+// BỘ ĐỌC DỮ LIỆU ĐA TẦNG
 const parseDeep = (val: any, fallback: any = {}): any => {
     if (val === null || val === undefined) return fallback;
     if (typeof val === 'object') return val;
     if (typeof val === 'string') {
         const trimmed = val.trim();
         if (trimmed === "" || trimmed === "[]" || trimmed === "{}") return fallback;
-        try {
-            const p = JSON.parse(trimmed);
-            if (typeof p === 'string') return parseDeep(p, fallback);
-            return p;
-        } catch (e) { return fallback; }
+        try { const p = JSON.parse(trimmed); return typeof p === 'string' ? JSON.parse(p) : p; } catch (e) { return fallback; }
     }
     return fallback;
 };
@@ -27,18 +23,18 @@ const ensureObject = (val: any) => (typeof val === 'object' && val !== null && !
 
 const extractNotesText = (raw: any) => {
     const parsed = parseDeep(raw);
-    if (parsed && typeof parsed === 'object') {
-        if (parsed.notes !== undefined) return parsed.notes;
-        if (parsed.exit_strats) return `Exit Plans: ${parsed.exit_strats.join(', ')}`;
-        return "";
-    }
+    if (parsed && typeof parsed === 'object') { return parsed.notes || ""; }
     if (typeof parsed === 'string') return parsed;
     return "";
 };
 
 const inputStyleBase = { padding: '8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px', outline: 'none', flex: 1 };
-
 const getMonday = (d: Date) => { const date = new Date(d); const day = date.getDay(); const diff = date.getDate() - day + (day === 0 ? -6 : 1); date.setDate(diff); date.setHours(0, 0, 0, 0); const offset = date.getTimezoneOffset(); return new Date(date.getTime() - (offset * 60000)).toISOString().split('T')[0]; };
+
+const SafeImage = ({ path }: any) => {
+    if (!path || path === "[]" || path === "") return <div style={{ width: '100%', height: '100%', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#cbd5e1', fontSize: '10px' }}>No Img</div>;
+    return <img src={path} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
+};
 
 export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number }) {
     const [currentWeek, setCurrentWeek] = useState(() => getMonday(new Date()));
@@ -59,7 +55,7 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
     const [editingPsyItem, setEditingPsyItem] = useState<any | null>(null);
     const [psyForm, setPsyForm] = useState({ emotion: "Normal", context: "Pre-Trade", note: "" });
 
-    // State cho Form Missed
+    // STATE CHO FORM MISSED
     const [showMissedForm, setShowMissedForm] = useState(false);
     const [editingMissedItem, setEditingMissedItem] = useState<any | null>(null);
     const [missedForm, setMissedForm] = useState({ pair: "EURUSD", direction: "BUY", reason: "Hesitation", notes: "", image_paths: [] as string[] });
@@ -85,11 +81,10 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                     return {
                         uuid: x.uuid, pair: x.pair, direction: x.direction, reason: x.status, 
                         notes: extractNotesText(x.analysis_details),
-                        raw_analysis: x.analysis_details, // Giữ lại nguyên gốc để không bị đè mất khi update
-                        images: x.images, created_at: x.created_at
+                        images: ensureArray(parseDeep(x.images, [])), 
+                        created_at: x.created_at
                     };
                 });
-                // Sort mới nhất lên đầu
                 setMissedTrades(autoMissed.sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
             }
 
@@ -135,18 +130,16 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                 week_start_date: currentWeek, account_id: accountId, total_trades: trades.length,
                 win_rate: trades.length > 0 ? (wins / trades.length) * 100 : 0, net_pnl: netPnl,
                 fa_accuracy: faScore, ta_accuracy: taScore, fusion_score: fusionScore,
-                review_details: JSON.stringify(details) // Thằng WeeklyReview xài models.TextField nên phải stringify
+                review_details: JSON.stringify(details)
             };
 
-            await fetch("https://mk-project19-1.onrender.com/api/reviews/", {
-                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
-            });
+            await fetch("https://mk-project19-1.onrender.com/api/reviews/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
 
             toast.success("Hồ sơ thẩm vấn đã được cất vào két!");
         } catch (e) { toast.error("Cáp quang đứt: " + String(e)); }
     };
 
-    // --- HỆ THỐNG XỬ LÝ MISSED/CANCELLED THÔNG MINH ---
+    // --- FORM XỬ LÝ MISSED/CANCEL ĐÚNG CHUẨN ---
     const openAddMissed = () => {
         setEditingMissedItem(null);
         setMissedForm({ pair: "EURUSD", direction: "BUY", reason: "Hesitation", notes: "", image_paths: [] });
@@ -154,16 +147,17 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
     };
 
     const handleSaveMissedNote = async () => {
+        if (!missedForm.pair || !missedForm.notes) return toast.error("Cần nhập Pair và Ghi chú!");
         try {
             const baseUrl = "https://mk-project19-1.onrender.com/api/scenarios";
             
             if (editingMissedItem) {
-                // CẬP NHẬT GHI CHÚ
-                const existingData = ensureObject(parseDeep(editingMissedItem.raw_analysis));
+                // ÉP KIỂU STRINGIFY TRƯỚC KHI GỬI XUỐNG
                 const updatePayload = {
                     input: {
                         uuid: editingMissedItem.uuid,
-                        analysis_details: { ...existingData, notes: missedForm.notes, reason: missedForm.reason } 
+                        analysis_details: JSON.stringify({ notes: missedForm.notes }),
+                        images: JSON.stringify(missedForm.image_paths)
                     }
                 };
                 
@@ -171,7 +165,6 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updatePayload)
                 });
             } else {
-                // TẠO LỆNH MANUAL MISSED MỚI TINH
                 const createRes = await fetch(`${baseUrl}/create/`, {
                     method: "POST", headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -184,22 +177,24 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                 const createData = await createRes.json();
                 const newUuid = createData.uuid;
 
-                // Gắn nhãn Missed
                 await fetch(`${baseUrl}/status/`, {
                     method: "POST", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ uuid: newUuid, status: "MISSED" })
+                    body: JSON.stringify({ uuid: newUuid, status: missedForm.reason === 'CANCELLED' ? 'CANCELLED' : 'MISSED' })
                 });
 
-                // Nhồi ghi chú
                 await fetch(`${baseUrl}/update/`, {
                     method: "POST", headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                        input: { uuid: newUuid, analysis_details: { notes: missedForm.notes, reason: missedForm.reason } }
+                        input: { 
+                            uuid: newUuid, 
+                            analysis_details: JSON.stringify({ notes: missedForm.notes }),
+                            images: JSON.stringify(missedForm.image_paths)
+                        }
                     })
                 });
             }
 
-            toast.success("Đã ghi nhận bài học sương máu!");
+            toast.success("Đã cất cẩn thận!");
             setShowMissedForm(false);
             setEditingMissedItem(null);
             await loadData();
@@ -219,7 +214,6 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
         } catch (e) { toast.error("Lỗi: " + e); }
     };
 
-    // --- PSYCHOLOGY ---
     const handleSavePsyNote = () => {
         if (!psyForm.note) return toast.error("Ghi chút gì đi sếp!");
         let updatedNotes = [...(details.psy_notes || [])];
@@ -363,14 +357,12 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
 
             {activeTab === 'missed' && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', height: '100%', overflow: 'hidden' }}>
-                    <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0', overflowY: 'auto', position: 'relative' }}>
-                        
+                    <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0', overflowY: 'auto' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
                             <h3 style={{ margin: 0 }}>Những kẻ đào ngũ (Bị hủy/Lỡ chuyến đò)</h3>
                             <button onClick={openAddMissed} style={{ padding: '5px 10px', background: 'white', border: '1px solid #cbd5e1', borderRadius: '4px', cursor: 'pointer', display: 'flex', gap: '4px', alignItems: 'center' }}><Plus size={14}/> Add Manual</button>
                         </div>
 
-                        {/* FORM ĐÚNG CHUẨN UI SẾP YÊU CẦU */}
                         {showMissedForm && (
                             <div style={{ background: 'white', padding: '15px', borderRadius: '8px', border: '1px solid #bae6fd', marginBottom: '15px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', color: '#0369a1', fontWeight: 'bold' }}>
@@ -383,7 +375,7 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                                         <option value="BUY">BUY</option><option value="SELL">SELL</option>
                                     </select>
                                 </div>
-                                <select value={missedForm.reason} onChange={e => setMissedForm({...missedForm, reason: e.target.value})} style={{...inputStyleBase, width: '100%', marginBottom: '10px'}} disabled={!!editingMissedItem}>
+                                <select value={missedForm.reason} onChange={e => setMissedForm({...missedForm, reason: e.target.value})} style={{...inputStyleBase, width: '100%', marginBottom: '10px'}}>
                                     <option value="Hesitation">Hesitation</option>
                                     <option value="Spread">Spread</option>
                                     <option value="Sleep">Sleep</option>
@@ -395,13 +387,21 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                                 {showImgInput && (
                                     <div style={{display: 'flex', gap: '5px', marginBottom: '10px'}}>
                                         <input value={tempImgLink} onChange={e => setTempImgLink(e.target.value)} placeholder="Dán link ảnh vào đây..." style={inputStyleBase} />
-                                        <button onClick={() => { setMissedForm({...missedForm, image_paths: [...missedForm.image_paths, tempImgLink]}); setTempImgLink(""); }} style={{ background: '#cbd5e1', border: 'none', padding: '0 10px', borderRadius: '4px', cursor: 'pointer'}}>Add Link</button>
+                                        <button onClick={() => { if(tempImgLink) { setMissedForm({...missedForm, image_paths: [...missedForm.image_paths, tempImgLink]}); setTempImgLink(""); } }} style={{ background: '#cbd5e1', border: 'none', padding: '0 10px', borderRadius: '4px', cursor: 'pointer'}}>Add</button>
                                     </div>
                                 )}
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(60px, 1fr))', gap: '5px', marginBottom: '10px' }}>
+                                    {missedForm.image_paths.map((p, i) => (
+                                        <div key={i} style={{ height: '40px', position: 'relative', border: '1px solid #e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                                            <SafeImage path={p} />
+                                            <button onClick={() => setMissedForm({...missedForm, image_paths: missedForm.image_paths.filter((_, idx) => idx !== i)})} style={{ position: 'absolute', top: 0, right: 0, background: 'red', color: 'white', border: 'none', width: '12px', height: '12px', fontSize: '8px', cursor: 'pointer' }}>x</button>
+                                        </div>
+                                    ))}
+                                </div>
                                 
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <button onClick={() => setShowImgInput(!showImgInput)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><Camera size={18} /></button>
-                                    <button onClick={handleSaveMissedNote} style={{ background: '#2563eb', color: 'white', padding: '6px 20px', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>Save</button>
+                                    <button onClick={() => setShowImgInput(!showImgInput)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}><Camera size={18} /></button>
+                                    <button onClick={handleSaveMissedNote} style={{ background: '#2563eb', color: 'white', padding: '6px 20px', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>Lưu Hồ Sơ</button>
                                 </div>
                             </div>
                         )}
@@ -409,22 +409,26 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                             {missedTrades.length === 0 ? <div style={{color: '#94a3b8'}}>Không có lệnh nào bị hủy. Kỷ luật tuyệt đối!</div> : missedTrades.map(m => (
                                 <div key={m.uuid} style={{ padding: '10px', borderLeft: `4px solid ${m.reason === 'CANCELLED' ? '#ef4444' : '#f59e0b'}`, background: '#fff', border: '1px solid #e2e8f0', borderRadius: '4px' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
                                         <div>
                                             <strong>{m.pair} <span style={{ fontSize: '11px', color: '#64748b' }}>({m.direction})</span></strong>
-                                            <div style={{ fontSize: '10px', color: '#94a3b8' }}>Auto (Scenario)</div>
                                         </div>
                                         <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
                                             <span style={{ fontSize: '10px', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>{m.reason}</span>
                                             <button onClick={() => { 
                                                 setEditingMissedItem(m); 
-                                                setMissedForm({ pair: m.pair, direction: m.direction, reason: m.reason, notes: m.notes, image_paths: [] }); 
+                                                setMissedForm({ pair: m.pair, direction: m.direction, reason: m.reason, notes: m.notes, image_paths: m.images || [] }); 
                                                 setShowMissedForm(true); 
                                             }} style={{ color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer' }}><Edit3 size={14} /></button>
                                             <button onClick={() => handleDeleteMissed(m.uuid)} style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }}><Trash2 size={14} /></button>
                                         </div>
                                     </div>
                                     <div style={{ fontSize: '13px', fontStyle: 'italic', margin: '5px 0', color: '#64748b' }}>{m.notes || "Chưa có ghi chú biện minh."}</div>
+                                    {m.images && m.images.length > 0 && (
+                                        <div style={{ display: 'flex', gap: '5px', marginTop: '5px' }}>
+                                            {m.images.map((p: string, i: number) => <div key={i} style={{ width: '40px', height: '30px', border: '1px solid #cbd5e1', borderRadius: '4px', overflow: 'hidden' }}><SafeImage path={p} /></div>)}
+                                        </div>
+                                    )}
                                 </div>
                             ))}
                         </div>
