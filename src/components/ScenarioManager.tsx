@@ -36,6 +36,14 @@ const getUsdBias = (pair: string, direction: string) => {
     return 0;
 };
 
+//--- HELPER DATES
+const getMondayLocal = (d: Date) => {
+    const date = new Date(d); const day = date.getDay();
+    const diff = date.getDate() - day + (day === 0 ? -6 : 1); date.setDate(diff);
+    const offset = date.getTimezoneOffset();
+    return new Date(date.getTime() - (offset * 60000)).toISOString().split('T')[0];
+};
+
 //--- STYLES
 const styles = {
     container: { display: "flex", height: "100vh", fontFamily: "'Inter', 'Segoe UI', sans-serif", backgroundColor: '#f1f5f9', padding: '20px', gap: '20px' },
@@ -89,11 +97,6 @@ const RiskField = ({ label, value, onChange, isOverRisk, color }: any) => (
     </div>
 );
 
-const MT5Thumbnail = ({ path }: { path: string }) => {
-    if (!path) return null;
-    return <img src={path} style={{ width: 40, height: 30, objectFit: 'cover', borderRadius: 4, border: '1px solid #e2e8f0', cursor: 'zoom-in' }} onError={(e) => e.currentTarget.style.display = 'none'} alt="thumb" />
-};
-
 export default function ScenarioManager({ accountId, prefillData, onClearPrefill }: ScenarioManagerProps) {
     const [scenarios, setScenarios] = useState<ScenarioExtended[]>([]);
     const [setupLibrary, setSetupLibrary] = useState<LibraryItem[]>([]);
@@ -107,6 +110,10 @@ export default function ScenarioManager({ accountId, prefillData, onClearPrefill
     const [isEditMode, setIsEditMode] = useState(false);
     const [portfolioState, setPortfolioState] = useState<{ mode: string, current_usd_bias: number, account_status: string, account_weight: number, total_equity: number } | null>(null);
     
+    // THE NEW MACRO OUTLOOK PIPELINE
+    const [outlookData, setOutlookData] = useState({ sentiment: 'MIXED', bias: 'NEUTRAL' });
+    const [myMood, setMyMood] = useState("FOCUSED");
+
     const [form, setForm] = useState<ScenarioInput>({ pair: "XAUUSD", direction: "BUY", entry_price: 0, sl_price: 0, tp_price: 0, volume: 0 });
     const [context, setContext] = useState({ htf_trend: 'Bullish', market_phase: 'Expansion', dealing_range: 'Discount', narrative: "" });
     const [scenarioType, setScenarioType] = useState("");
@@ -115,38 +122,37 @@ export default function ScenarioManager({ accountId, prefillData, onClearPrefill
     const [selectedRiskProfileId, setSelectedRiskProfileId] = useState<string>("");
     const [orderType, setOrderType] = useState<"LIMIT" | "STOP" | "MARKET">("LIMIT");
     const [exitStrats, setExitStrats] = useState<string[]>([]);
-    const [images, setImages] = useState<string[]>([]);
     const [isManualVolume, setIsManualVolume] = useState(false);
     const [isAddingExit, setIsAddingExit] = useState(false);
     const [isAddingTag, setIsAddingTag] = useState(false);
 
     const loadInitialData = async () => {
         try {
-            const [sRes, sLib, eLib, risksStr, settStr, typesStr, tagsStr, ceoStateStr] = await Promise.all([
+            const currentWeek = getMondayLocal(new Date());
+            const [sRes, sLib, eLib, risksStr, typesStr, tagsStr, ceoStateStr, outRes] = await Promise.all([
                 fetch(`https://mk-project19-1.onrender.com/api/scenarios/?accountId=${accountId}`).then(r => r.json()),
                 fetch('https://mk-project19-1.onrender.com/api/library/?category=SETUP').then(r => r.json()),
                 fetch('https://mk-project19-1.onrender.com/api/library/?category=EXIT_STRAT').then(r => r.json()),
                 fetch('https://mk-project19-1.onrender.com/api/library/?category=RISK_MODEL').then(r => r.json()),
-                fetch(`https://mk-project19-1.onrender.com/api/settings/?accountId=${accountId}`).then(r => r.json()),
                 fetch('https://mk-project19-1.onrender.com/api/library/?category=SCENARIO_TYPE').then(r => r.json()),
                 fetch('https://mk-project19-1.onrender.com/api/library/?category=CONTEXT_TAG').then(r => r.json()),
-                fetch(`https://mk-project19-1.onrender.com/api/portfolio/state/?accountId=${accountId}`).then(r => r.json())
+                fetch(`https://mk-project19-1.onrender.com/api/portfolio/state/?accountId=${accountId}`).then(r => r.json()),
+                // Fetch Outlook từ API sếp vừa xây
+                fetch(`https://mk-project19-1.onrender.com/api/outlook/current/?week_start=${currentWeek}`).then(r => r.json())
             ]);
-            setScenarios(sRes);
-            setSetupLibrary(sLib);
-            setExitLibrary(eLib);
-            setScenarioTypes(typesStr);
-            setContextTagsLib(tagsStr);
-            setPortfolioState(ceoStateStr);
+            
+            setScenarios(sRes); setSetupLibrary(sLib); setExitLibrary(eLib);
+            setScenarioTypes(typesStr); setContextTagsLib(tagsStr); setPortfolioState(ceoStateStr);
             if (!scenarioType && typesStr.length > 0) setScenarioType(typesStr[0].title);
             setRiskProfiles(risksStr.map((r: any) => ({ id: r.id, title: r.title, configuration: r.configuration || "{}" })));
             
-            const pState = ceoStateStr;
-            const settings = settStr;
-            if (pState.account_weight >= 0) {
-                setAccountBalance(pState.total_equity * (pState.account_weight / 100));
-            } else {
-                setAccountBalance(settings.initial_balance || 10000);
+            // Set Outlook
+            if (outRes && !outRes.error) {
+                setOutlookData({ sentiment: outRes.market_sentiment || 'MIXED', bias: outRes.weekly_bias || 'NEUTRAL' });
+            }
+
+            if (ceoStateStr.account_weight >= 0) {
+                setAccountBalance(ceoStateStr.total_equity * (ceoStateStr.account_weight / 100));
             }
         } catch (e) { console.error("Data fetching error:", e); }
     };
@@ -167,8 +173,22 @@ export default function ScenarioManager({ accountId, prefillData, onClearPrefill
 
     const totalSignalScore = useMemo(() => Object.values(signalScores).reduce((sum, val) => sum + val, 0), [signalScores]);
 
+    // BỘ PHÁN XÉT TỬ THẦN - LỆNH BỘI PHẢN
+    const biasCheck = useMemo(() => {
+        if (!outlookData.bias || outlookData.bias.toUpperCase() === "NEUTRAL") return { status: "NO PLAN", color: "#64748b", text: "KHÔNG NẰM TRONG PLAN" };
+        const biasStr = outlookData.bias.toUpperCase();
+        if (!biasStr.includes(form.pair.toUpperCase())) return { status: "NO PLAN", color: "#64748b", text: "KHÔNG NẰM TRONG PLAN" };
+
+        const isBuyBias = biasStr.includes("BUY") || biasStr.includes("LONG") || biasStr.includes("BULLISH");
+        const isSellBias = biasStr.includes("SELL") || biasStr.includes("SHORT") || biasStr.includes("BEARISH");
+
+        if ((form.direction === "BUY" && isSellBias) || (form.direction === "SELL" && isBuyBias)) {
+            return { status: "VIOLATION", color: "#dc2626", text: "LỆNH BỘI PHẢN (Ngược Outlook)" };
+        }
+        return { status: "ALIGNED", color: "#16a34a", text: "MACRO ALIGNED" };
+    }, [form.pair, form.direction, outlookData.bias]);
+
     const riskCalc = useMemo(() => {
-        // GIAO THỨC KHAI HỎA KHẨN CẤP
         if (orderType === "MARKET") {
             const panicRisk = accountBalance * 0.02; // Khóa cứng 2% vốn
             return { safeLots: 999, riskAmt: panicRisk, rr: 0, riskDisplay: "PANIC OVERRIDE (MAX 2% RISK)" };
@@ -181,30 +201,15 @@ export default function ScenarioManager({ accountId, prefillData, onClearPrefill
         
         let riskConfig: any = { type: "PERCENT", value: 1.0 };
         if (profile) {
-            try {
-                const parsed = JSON.parse(profile.configuration);
-                if (parsed.type) riskConfig = parsed;
-            } catch { }
+            try { const parsed = JSON.parse(profile.configuration); if (parsed.type) riskConfig = parsed; } catch { }
         }
 
         let riskAmt = 0; let displayPercent = 0;
-        if (riskConfig.type === "FIXED") {
-            riskAmt = riskConfig.value || 100;
-        } else if (riskConfig.type === "KELLY") {
-            const W = riskConfig.win_rate || 0.5;
-            const R = riskConfig.avg_rr || 1.5;
-            let K = W - ((1 - W) / R);
-            if (K < 0) K = 0.001;
-            const baseRisk = riskConfig.base_risk || 2.0;
-            const fraction = riskConfig.fraction || 1.0;
-            displayPercent = Math.min(K * 100 * fraction, baseRisk);
-            riskAmt = accountBalance * (displayPercent / 100);
-        } else {
-            displayPercent = riskConfig.value || 1.0;
-            riskAmt = accountBalance * (displayPercent / 100);
-        }
+        if (riskConfig.type === "FIXED") { riskAmt = riskConfig.value || 100; } 
+        else { displayPercent = riskConfig.value || 1.0; riskAmt = accountBalance * (displayPercent / 100); }
 
         if (portfolioState?.mode === "REDUCED") { riskAmt = riskAmt / 2; displayPercent = displayPercent / 2; }
+        
         let signalMultiplier = 1;
         if (totalSignalScore < 60) signalMultiplier = 0;
         else if (totalSignalScore >= 60 && totalSignalScore < 70) signalMultiplier = 0.5;
@@ -218,7 +223,7 @@ export default function ScenarioManager({ accountId, prefillData, onClearPrefill
         let display = riskConfig.type === "FIXED" ? `$${riskConfig.value}` : `${displayPercent.toFixed(2)}%`;
         
         if (portfolioState?.mode === "REDUCED") display += " (Cut 50%)";
-        if (signalMultiplier === 0.5) display += " (Signal Penalty: Cut 50%)";
+        if (signalMultiplier === 0.5) display += " (Score Penalty: Cut 50%)";
         
         return { safeLots: lots, riskAmt, rr, riskDisplay: display };
     }, [form, selectedRiskProfileId, accountBalance, riskProfiles, orderType, portfolioState, totalSignalScore]);
@@ -252,7 +257,6 @@ export default function ScenarioManager({ accountId, prefillData, onClearPrefill
         setSelectedSetupId(s.setup_id || null);
         try {
             const d = JSON.parse(s.analysis_details || "{}"); setExitStrats(d.exit_strats || []);
-            setImages(JSON.parse(s.images || "[]"));
             const parsedChecklist = JSON.parse(s.pre_trade_checklist || "{}");
             if (parsedChecklist.features) { setSignalScores(parsedChecklist.features); } else { setSignalScores({}); }
         } catch { }
@@ -269,20 +273,12 @@ export default function ScenarioManager({ accountId, prefillData, onClearPrefill
     };
 
     const handleSave = async (andExecute = false) => {
-        // KIỂM DUYỆT ĐẦU VÀO ĐÃ ĐƯỢC CHUẨN HÓA CHO MARKET
         if (andExecute && orderType !== "MARKET" && !isExitValid) return toast.error("Exit Strategy is mandatory for execution.");
         if (orderType !== "MARKET" && form.entry_price === 0) return toast.error("Cần nhập giá tham chiếu để tính toán!");
         if (orderType === "MARKET" && form.volume <= 0) return toast.error("LỆNH KHẨN CẤP: Yêu cầu nạp đạn (Nhập Actual Volume)!");
 
         let uuid = activeScenarioId;
         const riskSnap = riskCalc ? { profile_id: selectedRiskProfileId, safe_lots: riskCalc.safeLots } : {};
-        
-        const getMondayLocal = (d: Date) => {
-            const date = new Date(d); const day = date.getDay();
-            const diff = date.getDate() - day + (day === 0 ? -6 : 1); date.setDate(diff);
-            const offset = date.getTimezoneOffset();
-            return new Date(date.getTime() - (offset * 60000)).toISOString().split('T')[0];
-        };
         const outlookId = `WEEK-${getMondayLocal(new Date())}`;
 
         if (!uuid) {
@@ -294,13 +290,13 @@ export default function ScenarioManager({ accountId, prefillData, onClearPrefill
             } catch (e) { return toast.error("Initialization failure: " + e); }
         }
 
-        const complianceDataString = JSON.stringify({ score: totalSignalScore, features: signalScores });
+        const complianceDataString = JSON.stringify({ score: totalSignalScore, features: signalScores, mood: myMood });
         try {
             const updatePayload = {
                 input: {
                     uuid, analysis: JSON.stringify({ exit_strats: exitStrats, notes: "" }),
                     checklist: complianceDataString, risk_data: JSON.stringify(riskSnap),
-                    images: JSON.stringify(images), setup_id: selectedSetupId,
+                    images: "[]", setup_id: selectedSetupId,
                     entry_price: form.entry_price, sl_price: form.sl_price, tp_price: form.tp_price, volume: form.volume,
                     htf_trend: context.htf_trend, market_phase: context.market_phase, dealing_range: context.dealing_range, narrative: context.narrative, scenario_type: scenarioType
                 }
@@ -318,18 +314,11 @@ export default function ScenarioManager({ accountId, prefillData, onClearPrefill
         try {
             const type = orderType === "MARKET" ? (scenarioData.direction === "BUY" ? "ORDER_TYPE_BUY" : "ORDER_TYPE_SELL") : `${scenarioData.direction}_${orderType}`;
             
-            // 1. Cập nhật trạng thái trên UI (Web)
             await fetch("https://mk-project19-1.onrender.com/api/scenarios/execute/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scenarioUuid: scenarioData.uuid, orderType: type }) });
 
-            // 2. ỐNG XẢ KÉP: Bắn trực tiếp đạn xuống MT5
             const resMt5 = await fetch("https://mk-project19-1.onrender.com/api/mt5/direct_fire/", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    ticker: scenarioData.pair,
-                    direction: scenarioData.direction,
-                    volume: scenarioData.volume
-                })
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ticker: scenarioData.pair, direction: scenarioData.direction, volume: scenarioData.volume })
             });
 
             if (!resMt5.ok) throw new Error("Cổng MT5 từ chối nhận lệnh!");
@@ -384,8 +373,6 @@ export default function ScenarioManager({ accountId, prefillData, onClearPrefill
                         const isActive = s.status === 'FILLED' || s.status === 'ACTIVE';
                         const isSelected = s.uuid === activeScenarioId;
                         const isClosed = s.status === 'CLOSED';
-                        let imgs: string[] = [];
-                        try { imgs = [...JSON.parse(s.images || "[]"), ...JSON.parse(s.result_images || "[]")]; } catch { }
                         let scoreVal = 0;
                         try { const c = JSON.parse(s.pre_trade_checklist || "{}"); scoreVal = c.score || 0; } catch { }
                         return (
@@ -399,7 +386,6 @@ export default function ScenarioManager({ accountId, prefillData, onClearPrefill
                                     {scoreVal > 0 && <span style={{ fontSize: '10px', background: '#f1f5f9', padding: '2px 6px', borderRadius: 4, fontWeight: 'bold', color: '#475569' }}>{scoreVal}pt</span>}
                                     <span style={{ fontSize: '12px', color: '#64748b' }}>RR: {s.tp_price && s.sl_price ? ((Math.abs(s.tp_price - s.entry_price) / Math.abs(s.entry_price - s.sl_price)).toFixed(1)) : 'N/A'}R</span>
                                 </div>
-                                {imgs.length > 0 && (<div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>{imgs.map((path: string, idx: number) => <MT5Thumbnail key={idx} path={path} />)}</div>)}
                                 {!isClosed && (
                                     <div style={{ display: 'flex', gap: '5px', paddingTop: '8px', borderTop: '1px dashed #e2e8f0' }}>
                                         {!isActive && <button onClick={(e) => { e.stopPropagation(); triggerExecution(s); }} style={styles.actionBtn('white', '#0f172a')} title="Execute"><Play size={14} /></button>}
@@ -416,23 +402,50 @@ export default function ScenarioManager({ accountId, prefillData, onClearPrefill
             </div>
 
             <div style={{ ...styles.column, flex: 1 }}>
-                <div style={{ padding: '15px 25px', background: 'white', borderBottom: '1px solid #e2e8f0', display: 'flex', gap: '25px', alignItems: 'center' }}>
-                    <select value={form.pair} onChange={e => setForm({ ...form, pair: e.target.value })} style={{ fontSize: '18px', fontWeight: 'bold', padding: '10px 15px', borderRadius: '10px', border: '1px solid #cbd5e1', width: '160px', outline: 'none' }}>
-                        {ALL_PAIRS.map(p => <option key={p} value={p}>{p}</option>)}
-                    </select>
-                    <div style={{ display: 'flex', gap: '20px' }}>
-                        <button onClick={() => setForm({ ...form, direction: "BUY" })} style={{ width: '100px', padding: '10px 0', borderRadius: '8px', border: form.direction === 'BUY' ? '2px solid #16a34a' : '1px solid #cbd5e1', background: form.direction === 'BUY' ? '#dcfce7' : 'white', color: form.direction === 'BUY' ? '#15803d' : '#64748b', fontWeight: '800', cursor: 'pointer', boxShadow: form.direction === 'BUY' ? '0 4px 6px -1px rgba(22, 163, 74, 0.2)' : 'none' }}>LONG</button>
-                        <button onClick={() => setForm({ ...form, direction: "SELL" })} style={{ width: '100px', padding: '10px 0', borderRadius: '8px', border: form.direction === 'SELL' ? '2px solid #dc2626' : '1px solid #cbd5e1', background: form.direction === 'SELL' ? '#fee2e2' : 'white', color: form.direction === 'SELL' ? '#991b1b' : '#64748b', fontWeight: '800', cursor: 'pointer', boxShadow: form.direction === 'SELL' ? '0 4px 6px -1px rgba(220, 38, 38, 0.2)' : 'none' }}>SHORT</button>
+                
+                {/* THANH TOP BAR HIỆN THỊ OUTLOOK */}
+                <div style={{ padding: '15px 25px', background: 'white', borderBottom: '1px solid #e2e8f0', display: 'flex', gap: '25px', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+                        <select value={form.pair} onChange={e => setForm({ ...form, pair: e.target.value })} style={{ fontSize: '18px', fontWeight: 'bold', padding: '10px 15px', borderRadius: '10px', border: '1px solid #cbd5e1', width: '140px', outline: 'none' }}>
+                            {ALL_PAIRS.map(p => <option key={p} value={p}>{p}</option>)}
+                        </select>
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                            <button onClick={() => setForm({ ...form, direction: "BUY" })} style={{ width: '90px', padding: '10px 0', borderRadius: '8px', border: form.direction === 'BUY' ? '2px solid #16a34a' : '1px solid #cbd5e1', background: form.direction === 'BUY' ? '#dcfce7' : 'white', color: form.direction === 'BUY' ? '#15803d' : '#64748b', fontWeight: '800', cursor: 'pointer', boxShadow: form.direction === 'BUY' ? '0 4px 6px -1px rgba(22, 163, 74, 0.2)' : 'none' }}>LONG</button>
+                            <button onClick={() => setForm({ ...form, direction: "SELL" })} style={{ width: '90px', padding: '10px 0', borderRadius: '8px', border: form.direction === 'SELL' ? '2px solid #dc2626' : '1px solid #cbd5e1', background: form.direction === 'SELL' ? '#fee2e2' : 'white', color: form.direction === 'SELL' ? '#991b1b' : '#64748b', fontWeight: '800', cursor: 'pointer', boxShadow: form.direction === 'SELL' ? '0 4px 6px -1px rgba(220, 38, 38, 0.2)' : 'none' }}>SHORT</button>
+                        </div>
                     </div>
-                    <div style={{ marginLeft: 'auto', textAlign: 'center', background: '#f8fafc', padding: '5px 15px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                        <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b' }}>PORTFOLIO USD EXPOSURE</span>
-                        <div style={{ fontSize: '16px', fontWeight: 900, color: portfolioState?.current_usd_bias! >= 2 ? '#dc2626' : (portfolioState?.current_usd_bias! <= -2 ? '#dc2626' : '#2563eb') }}>
-                            {portfolioState?.current_usd_bias! > 0 ? `+${portfolioState?.current_usd_bias} (LONG)` : portfolioState?.current_usd_bias! < 0 ? `${portfolioState?.current_usd_bias} (SHORT)` : 'NEUTRAL'}
+
+                    <div style={{ display: 'flex', gap: '30px', alignItems: 'center' }}>
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Market Sentiment</div>
+                            <div style={{ fontSize: '16px', fontWeight: 900, color: '#0f172a' }}>{outlookData.sentiment}</div>
+                        </div>
+
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>My Mood</div>
+                            <select value={myMood} onChange={e => setMyMood(e.target.value)} style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', fontWeight: 'bold', outline: 'none', color: '#059669', background: '#f0fdf4' }}>
+                                <option value="FOCUSED">🧘‍♂️ FOCUSED (Bình tĩnh)</option>
+                                <option value="FOMO">🔥 FOMO (Hưng phấn)</option>
+                                <option value="REVENGE">🤬 REVENGE (Cay cú)</option>
+                                <option value="TIRED">🥱 TIRED (Mệt mỏi)</option>
+                            </select>
+                        </div>
+
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Weekly Bias</div>
+                            <div style={{ fontSize: '16px', fontWeight: 900, color: '#d97706', textTransform: 'uppercase' }}>{outlookData.bias}</div>
                         </div>
                     </div>
                 </div>
 
                 <div style={{ flex: 1, overflowY: 'auto' }}>
+                    {/* THANH CẢNH BÁO BỘI PHẢN */}
+                    {biasCheck.status !== "ALIGNED" && (
+                        <div style={{ background: biasCheck.color === '#dc2626' ? '#fef2f2' : '#f8fafc', padding: '10px 25px', borderBottom: `1px dashed ${biasCheck.color}`, color: biasCheck.color, fontWeight: 'bold', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <AlertTriangle size={16} /> LƯU Ý TỪ HẢI ĐĂNG: {biasCheck.text}
+                        </div>
+                    )}
+
                     <SectionHeader title="1. MACRO & CONTEXT" icon={Brain} isOpen={expandedSection === "CONTEXT"} onClick={() => setExpandedSection("CONTEXT")} sub="Narrative First" colorTheme="orange" />
                     {expandedSection === "CONTEXT" && (
                         <div style={{ padding: '25px', background: '#fff7ed' }}>
@@ -611,9 +624,6 @@ export default function ScenarioManager({ accountId, prefillData, onClearPrefill
                                     </div>
                                 )}
                             </div>
-
-                            {isHalted && (<div style={{ background: '#fef2f2', padding: '15px', borderRadius: '10px', color: '#dc2626', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', border: '1px solid #fecaca' }}><Ban size={20} /> GLOBAL HALT ACTIVE: System execution frozen by Administrator.</div>)}
-                            {!isHalted && isCorrelationBlocked && (<div style={{ background: '#fffbeb', padding: '15px', borderRadius: '10px', color: '#b45309', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', border: '1px solid #fde68a' }}><AlertTriangle size={20} /> PORTFOLIO RISK WARNING: Order violates fund correlation limits. Execution blocked.</div>)}
 
                             <div style={{ display: 'flex', gap: '20px' }}>
                                 <button onClick={() => handleSave(false)} style={styles.bigButton('save', false) as any}><Save size={20} /> STORE SCENARIO</button>
