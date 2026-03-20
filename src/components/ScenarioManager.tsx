@@ -128,7 +128,7 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
     const [scenarioType, setScenarioType] = useState("");
     const [selectedSetupId, setSelectedSetupId] = useState<number | null>(null);
     const [checklist, setChecklist] = useState<{ [key: string]: boolean }>({});
-    const [dynamicChecklistItems, setDynamicChecklistItems] = useState<string[]>([]);
+    const [checklistItems, setChecklistItems] = useState<string[]>([]); // Dữ liệu checklist siêu sạch
     const [signalScores, setSignalScores] = useState<Record<string, number>>({});
     const [selectedRiskProfileId, setSelectedRiskProfileId] = useState<string>("");
     const [orderType, setOrderType] = useState<"LIMIT" | "STOP" | "MARKET">("LIMIT");
@@ -137,55 +137,66 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
     const [isAddingExit, setIsAddingExit] = useState(false);
     const [isAddingTag, setIsAddingTag] = useState(false);
 
-    const loadInitialData = async () => {
+    // BƯỚC 1: TẢI DỮ LIỆU TĨNH (CHỈ CHẠY 1 LẦN ĐỂ KHÔNG BỊ RESET GIAO DIỆN)
+    const loadStaticData = async () => {
         try {
-            const currentWeek = getMondayLocal(new Date());
             const baseUrl = "https://mk-project19-1.onrender.com/api";
-            
-            const [sRes, sLib, eLib, risksStr, typesStr, tagsStr, ceoStateStr, outRes] = await Promise.all([
-                fetch(`${baseUrl}/scenarios/?accountId=${accountId}`).then(r => r.ok ? r.json() : []),
+            const [sLib, eLib, risksStr, typesStr, tagsStr] = await Promise.all([
                 fetch(`${baseUrl}/library/?category=SETUP`).then(r => r.ok ? r.json() : []),
                 fetch(`${baseUrl}/library/?category=EXIT_STRAT`).then(r => r.ok ? r.json() : []),
                 fetch(`${baseUrl}/library/?category=RISK_MODEL`).then(r => r.ok ? r.json() : []),
                 fetch(`${baseUrl}/library/?category=SCENARIO_TYPE`).then(r => r.ok ? r.json() : []),
-                fetch(`${baseUrl}/library/?category=CONTEXT_TAG`).then(r => r.ok ? r.json() : []),
+                fetch(`${baseUrl}/library/?category=CONTEXT_TAG`).then(r => r.ok ? r.json() : [])
+            ]);
+
+            setSetupLibrary(Array.isArray(sLib) ? sLib : []);
+            setExitLibrary(Array.isArray(eLib) ? eLib : []);
+            setScenarioTypes(Array.isArray(typesStr) ? typesStr : []);
+            setContextTagsLib(Array.isArray(tagsStr) ? tagsStr : []);
+            if (!scenarioType && typesStr && typesStr.length > 0) setScenarioType(typesStr[0].title);
+            if (Array.isArray(risksStr)) setRiskProfiles(risksStr.map((r: any) => ({ id: r.id, title: r.title, configuration: r.configuration || "{}" })));
+        } catch (e) { console.error("Static Cloud fetching error:", e); }
+    };
+
+    // BƯỚC 2: TẢI DỮ LIỆU ĐỘNG (CẬP NHẬT LIÊN TỤC 5S/LẦN)
+    const loadDynamicData = async () => {
+        try {
+            const currentWeek = getMondayLocal(new Date());
+            const baseUrl = "https://mk-project19-1.onrender.com/api";
+            const [sRes, ceoStateStr, outRes] = await Promise.all([
+                fetch(`${baseUrl}/scenarios/?accountId=${accountId}`).then(r => r.ok ? r.json() : []),
                 fetch(`${baseUrl}/portfolio/state/?accountId=${accountId}`).then(r => r.ok ? r.json() : { total_equity: 10000, account_weight: 100 }),
                 fetch(`${baseUrl}/outlook/current/?week_start=${currentWeek}`).then(r => r.ok ? r.json() : null)
             ]);
 
             setScenarios(Array.isArray(sRes) ? sRes : []);
-            setSetupLibrary(Array.isArray(sLib) ? sLib : []);
-            setExitLibrary(Array.isArray(eLib) ? eLib : []);
-            setScenarioTypes(Array.isArray(typesStr) ? typesStr : []);
-            setContextTagsLib(Array.isArray(tagsStr) ? tagsStr : []);
             setPortfolioState(ceoStateStr);
-            
-            if (!scenarioType && typesStr && typesStr.length > 0) setScenarioType(typesStr[0].title);
-            if (Array.isArray(risksStr)) setRiskProfiles(risksStr.map((r: any) => ({ id: r.id, title: r.title, configuration: r.configuration || "{}" })));
             
             if (outRes && !outRes.error) {
                 setOutlookData({ sentiment: outRes.market_sentiment || 'MIXED', bias: outRes.weekly_bias || 'NEUTRAL' });
                 try {
                     const fa = JSON.parse(outRes.fa_bias || "{}");
-                    if (fa.planned && Array.isArray(fa.planned)) {
-                        setPlannedPairs(fa.planned);
-                    }
-                } catch (e) { console.error("Parse FA Bias failed", e); }
+                    if (fa.planned && Array.isArray(fa.planned)) setPlannedPairs(fa.planned);
+                } catch (e) {}
             }
 
             if (ceoStateStr.account_weight >= 0) {
                 setAccountBalance(ceoStateStr.total_equity * (ceoStateStr.account_weight / 100));
             }
-        } catch (e) { console.error("Cloud fetching error:", e); }
+        } catch (e) { console.error("Dynamic Cloud fetching error:", e); }
     };
 
-    useEffect(() => { loadInitialData(); }, [accountId]);
-    useEffect(() => { const i = setInterval(() => { loadInitialData(); }, 5000); return () => clearInterval(i); }, []);
+    useEffect(() => { 
+        loadStaticData(); 
+        loadDynamicData();
+        const i = setInterval(loadDynamicData, 5000); 
+        return () => clearInterval(i); 
+    }, [accountId]);
 
-    // FIX CHÍ TỬ 2: SỬA LỖI CHECKLIST BỊ RỖNG & TỰ KHÓA
+    // BƯỚC 3: CHIẾT XUẤT CHECKLIST (SIÊU SẠCH, KHÔNG GÂY LỖI RENDER)
     useEffect(() => {
         if (!selectedSetupId) {
-            setDynamicChecklistItems([]);
+            setChecklistItems([]);
             return;
         }
         const setup = setupLibrary.find(s => Number(s.id) === Number(selectedSetupId));
@@ -193,12 +204,12 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
             try {
                 const config = JSON.parse(setup.configuration);
                 if (config.checklist_items && Array.isArray(config.checklist_items) && config.checklist_items.length > 0) {
-                    setDynamicChecklistItems(config.checklist_items);
+                    setChecklistItems(config.checklist_items);
                     return;
                 }
-            } catch (e) { console.error("Parse config error", e); }
+            } catch (e) {}
         }
-        setDynamicChecklistItems([]);
+        setChecklistItems([]);
     }, [selectedSetupId, setupLibrary]);
 
     useEffect(() => {
@@ -214,41 +225,30 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
 
     const totalSignalScore = useMemo(() => Object.values(signalScores).reduce((sum, val) => sum + val, 0), [signalScores]);
 
-    // FIX CHÍ TỬ 1: HỆ THỐNG PHÁN XÉT BỘI PHẢN CHUẨN XÁC
+    // PHÁN XÉT BỘI PHẢN CHUẨN MỰC
     const biasCheck = useMemo(() => {
         if (plannedPairs.length === 0) return { status: "NO PLAN", color: "#64748b", text: "CHƯA CÓ PLAN (Đợi Sync từ Outlook)" };
-
-        // Dò xem cặp tiền hiện tại có nằm trong danh sách sếp đã chọn bên Outlook không
         const planned = plannedPairs.find(p => p.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().startsWith(form.pair.toUpperCase()));
-
         if (!planned) return { status: "NO PLAN", color: "#64748b", text: "KHÔNG NẰM TRONG PLAN" };
-
         const parts = planned.split('|');
         const dir = parts.length > 1 ? parts[1] : "";
         const planDir = (dir.toUpperCase() === 'BUY' || dir.toUpperCase() === 'LONG') ? 'BUY' : 'SELL';
-
-        if (form.direction !== planDir) {
-            return { status: "VIOLATION", color: "#dc2626", text: "LỆNH BỘI PHẢN (Ngược Outlook)" };
-        }
-
+        if (form.direction !== planDir) return { status: "VIOLATION", color: "#dc2626", text: "LỆNH BỘI PHẢN (Ngược Outlook)" };
         return { status: "ALIGNED", color: "#16a34a", text: "MACRO ALIGNED" };
     }, [form.pair, form.direction, plannedPairs]);
 
     const riskCalc = useMemo(() => {
         if (orderType === "MARKET") {
-            const panicRisk = accountBalance * 0.02; // Khóa 2%
+            const panicRisk = accountBalance * 0.02; // Khóa cứng 2%
             return { safeLots: 999, riskAmt: panicRisk, rr: 0, riskDisplay: "PANIC OVERRIDE (MAX 2% RISK)" };
         }
-
         if (!form.entry_price || !form.sl_price || form.entry_price === form.sl_price) return null;
         const dist = Math.abs(form.entry_price - form.sl_price);
         const multiplier = getMultiplier(form.pair);
         const profile = riskProfiles.find(p => String(p.id) === selectedRiskProfileId);
         
         let riskConfig: any = { type: "PERCENT", value: 1.0 };
-        if (profile) {
-            try { const parsed = JSON.parse(profile.configuration); if (parsed.type) riskConfig = parsed; } catch { }
-        }
+        if (profile) { try { const parsed = JSON.parse(profile.configuration); if (parsed.type) riskConfig = parsed; } catch { } }
 
         let riskAmt = 0; let displayPercent = 0;
         if (riskConfig.type === "FIXED") { riskAmt = riskConfig.value || 100; } 
@@ -276,12 +276,21 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
 
     const isOverRisk = riskCalc && form.volume > riskCalc.safeLots;
     
-    // LOGIC CHECKLIST MỚI: Chỉ tính điểm khi thực sự có checklist
-    const hasChecklist = dynamicChecklistItems.length > 0;
+    // BỘ ĐẾM KIỂM DUYỆT THÔNG MINH
+    const signalScoreCount = Object.keys(signalScores).length;
+    const isSignalComplete = signalScoreCount === SIGNAL_FEATURES.length;
+    const hasChecklist = checklistItems.length > 0;
     const checklistScore = Object.values(checklist).filter(Boolean).length;
-    const requiredTicks = hasChecklist ? Math.ceil(dynamicChecklistItems.length * 0.7) : 0;
+    const requiredTicks = hasChecklist ? Math.ceil(checklistItems.length * 0.7) : 0;
+    const isChecklistComplete = !hasChecklist || checklistScore >= requiredTicks;
     
-    const isStage2Valid = (!hasChecklist || checklistScore >= requiredTicks) && Object.keys(signalScores).length === SIGNAL_FEATURES.length && selectedSetupId !== null;
+    const isStage2Valid = isSignalComplete && isChecklistComplete && selectedSetupId !== null;
+
+    let validationMessage = "Setup Validated.";
+    if (!isSignalComplete) validationMessage = `Thiếu Algo Score (${signalScoreCount}/${SIGNAL_FEATURES.length})`;
+    else if (!selectedSetupId) validationMessage = "Chưa chọn Main Model.";
+    else if (!isChecklistComplete) validationMessage = `Thiếu Checklist (${checklistScore}/${requiredTicks})`;
+
     const isExitValid = exitStrats.length > 0;
 
     useEffect(() => {
@@ -355,7 +364,7 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
                 }
             };
             await fetch("https://mk-project19-1.onrender.com/api/scenarios/update/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updatePayload) });
-            setActiveScenarioId(uuid); toast.success("Đã ghi sổ cái!"); loadInitialData();
+            setActiveScenarioId(uuid); toast.success("Đã ghi sổ cái!"); loadDynamicData();
             if (andExecute && uuid) triggerExecution({ ...form, uuid });
         } catch (e) { toast.error("Backend Error: " + e); }
     };
@@ -377,7 +386,7 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
             if (!resMt5.ok) throw new Error("Bo mạch MT5 từ chối lệnh!");
 
             toast.success("ĐÃ ĐÓNG DẤU TRIỆN! LÍNH ĐÁNH THUÊ MT5 ĐANG LÊN ĐẠN!");
-            loadInitialData();
+            loadDynamicData();
         } catch (e) {
             toast.error("Lỗi: " + String(e), { duration: 6000, style: { background: '#ef4444', color: 'white', fontWeight: 'bold' } });
         }
@@ -388,7 +397,7 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
         const reason = prompt(`Lý do ${status}?`, "");
         if (reason !== null) {
             await fetch("https://mk-project19-1.onrender.com/api/scenarios/status/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uuid, status }) });
-            toast.success(`Marked as ${status}`); loadInitialData();
+            toast.success(`Marked as ${status}`); loadDynamicData();
         }
     };
 
@@ -396,7 +405,7 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
         e.stopPropagation();
         if (confirm("Xóa vĩnh viễn plan này?")) {
             await fetch("https://mk-project19-1.onrender.com/api/scenarios/delete/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uuid }) });
-            toast.success("Deleted."); loadInitialData();
+            toast.success("Deleted."); loadDynamicData();
             if (activeScenarioId === uuid) clearForm();
         }
     };
@@ -588,13 +597,17 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
                                 <div>
                                     <label style={labelStyle}>Setup Conditions (Dynamic)</label>
                                     <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '8px', border: '1px solid #e2e8f0', maxHeight: '300px', overflowY: 'auto' }}>
-                                        {/* HIỂN THỊ CHECKLIST THÔNG MINH */}
-                                        {dynamicChecklistItems.length === 0 ? (
+                                        {/* HIỂN THỊ CHECKLIST SẠCH, KHÔNG BUG */}
+                                        {(!selectedSetupId) ? (
                                             <div style={{ fontSize: '13px', color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', padding: '20px 0' }}>
-                                                {!selectedSetupId ? "Vui lòng chọn 'Main Model' bên cạnh để tải Checklist." : "Setup này chưa có Checklist cấu hình sẵn."}
+                                                Vui lòng chọn 'Main Model' bên cạnh để tải Checklist.
+                                            </div>
+                                        ) : checklistItems.length === 0 ? (
+                                            <div style={{ fontSize: '13px', color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', padding: '20px 0' }}>
+                                                Setup này chưa có Checklist cấu hình sẵn.
                                             </div>
                                         ) : (
-                                            dynamicChecklistItems.map((item, i) => (
+                                            checklistItems.map((item, i) => (
                                                 <label key={i} style={{ display: 'flex', gap: '10px', fontSize: '13px', marginBottom: '10px', cursor: 'pointer', color: checklist[item] ? '#166534' : '#475569', fontWeight: 500 }}>
                                                     <input type="checkbox" checked={checklist[item] || false} onChange={e => setChecklist({ ...checklist, [item]: e.target.checked })} style={{ transform: 'scale(1.2)' }} /> {item}
                                                 </label>
@@ -612,7 +625,7 @@ export default function ScenarioManager({ accountId = 1, prefillData, onClearPre
                                         {isStage2Valid ? <CheckCircle2 size={24} color="#16a34a" /> : <Lock size={24} color="#dc2626" />}
                                         <div style={{ display: 'flex', flexDirection: 'column' }}>
                                             <span style={{ fontSize: '14px', fontWeight: 700, color: isStage2Valid ? '#166534' : '#991b1b' }}>
-                                                {isStage2Valid ? "Setup Validated." : `Conditions Missing (${checklistScore}/${requiredTicks}).`}
+                                                {validationMessage}
                                             </span>
                                         </div>
                                     </div>
