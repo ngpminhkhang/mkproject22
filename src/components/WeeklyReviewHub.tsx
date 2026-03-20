@@ -14,7 +14,16 @@ const parseDeep = (val: any, fallback: any = {}): any => {
     if (typeof val === 'string') {
         const trimmed = val.trim();
         if (trimmed === "" || trimmed === "[]" || trimmed === "{}") return fallback;
-        try { const p = JSON.parse(trimmed); return typeof p === 'string' ? JSON.parse(p) : p; } catch (e) { return fallback; }
+        try {
+            let p = JSON.parse(trimmed);
+            // Vòng lặp vỡ lòng: Tiếp tục lột nếu bên trong vẫn là chuỗi
+            while (typeof p === 'string') {
+                p = JSON.parse(p);
+            }
+            return p;
+        } catch (e) { 
+            return fallback; 
+        }
     }
     return fallback;
 };
@@ -152,12 +161,12 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
             const baseUrl = "https://mk-project19-1.onrender.com/api/scenarios";
             
             if (editingMissedItem) {
-                // ÉP KIỂU STRINGIFY TRƯỚC KHI GỬI XUỐNG
+                // ĐÃ GỠ BỎ JSON.STRINGIFY - TRUYỀN RAW OBJECT/ARRAY
                 const updatePayload = {
                     input: {
                         uuid: editingMissedItem.uuid,
-                        analysis_details: JSON.stringify({ notes: missedForm.notes }),
-                        images: JSON.stringify(missedForm.image_paths)
+                        analysis_details: { notes: missedForm.notes },
+                        images: missedForm.image_paths
                     }
                 };
                 
@@ -187,8 +196,9 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                     body: JSON.stringify({
                         input: { 
                             uuid: newUuid, 
-                            analysis_details: JSON.stringify({ notes: missedForm.notes }),
-                            images: JSON.stringify(missedForm.image_paths)
+                            // ĐÃ GỠ BỎ JSON.STRINGIFY - TRUYỀN RAW OBJECT/ARRAY
+                            analysis_details: { notes: missedForm.notes },
+                            images: missedForm.image_paths
                         }
                     })
                 });

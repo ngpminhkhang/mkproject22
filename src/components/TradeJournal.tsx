@@ -18,9 +18,23 @@ const MISTAKES_LIST = ["FOMO", "Revenge", "Oversize", "No Plan", "Early Exit", "
 
 // BỘ GIẢI MÃ CHỐNG ĐỘT TỬ
 const parseDeep = (val: any, fallback: any = {}): any => {
-    if (!val) return fallback;
+    if (val === null || val === undefined) return fallback;
     if (typeof val === 'object') return val;
-    try { const p = JSON.parse(val); return typeof p === 'string' ? JSON.parse(p) : p; } catch (e) { return fallback; }
+    if (typeof val === 'string') {
+        const trimmed = val.trim();
+        if (trimmed === "" || trimmed === "[]" || trimmed === "{}") return fallback;
+        try {
+            let p = JSON.parse(trimmed);
+            // Vòng lặp vỡ lòng: Tiếp tục lột nếu bên trong vẫn là chuỗi
+            while (typeof p === 'string') {
+                p = JSON.parse(p);
+            }
+            return p;
+        } catch (e) { 
+            return fallback; 
+        }
+    }
+    return fallback;
 };
 const ensureArray = (val: any) => Array.isArray(val) ? val : [];
 const ensureObject = (val: any) => (typeof val === 'object' && val !== null && !Array.isArray(val)) ? val : {};
@@ -103,35 +117,36 @@ export default function TradeJournal({ accountId = 1 }: { accountId?: number }) 
         setTempImgLink("");
     };
     const handleSave = async () => {
-        if (!selectedTrade) return;
-        try {
-            const safeItems = ensureObject(compliance.items);
-            const checkedCount = Object.values(safeItems).filter(Boolean).length;
-            const score = Math.round((checkedCount / COMPLIANCE_RULES.length) * 100);
-            
-            // [BỌC NILON TUYỆT ĐỐI]
-            const packData = { 
-                lessons: reviewData.lessons, 
-                mistakes: mistakes, 
-                action_plan: reviewData.action_plan, 
-                _trade_class: tradeClass, 
-                _compliance: { score, items: safeItems } 
-            };
-            
-            const updatePayload = {
-                input: {
-                    uuid: selectedTrade.uuid,
-                    review_data: JSON.stringify(packData), 
-                    result_images: JSON.stringify(resultImages), 
-                    pnl: editPnL,
-                    exit_price: editExitPrice
-                }
-            };
-            
-            const res = await fetch("https://mk-project19-1.onrender.com/api/scenarios/update/", {
-                method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(updatePayload)
-            });
+    if (!selectedTrade) return;
+    try {
+        const safeItems = ensureObject(compliance.items);
+        const checkedCount = Object.values(safeItems).filter(Boolean).length;
+        const score = Math.round((checkedCount / COMPLIANCE_RULES.length) * 100);
+
+        const packData = { 
+            lessons: reviewData.lessons, 
+            mistakes: mistakes, 
+            action_plan: reviewData.action_plan, 
+            _trade_class: tradeClass, 
+            _compliance: { score, items: safeItems } 
+        };
+
+        const updatePayload = {
+            input: {
+                uuid: selectedTrade.uuid,
+                // Truyền THẲNG đối tượng và mảng, không dùng stringify ở đây!
+                review_data: packData, 
+                result_images: resultImages, 
+                pnl: editPnL,
+                exit_price: editExitPrice
+            }
+        };
+
+        const res = await fetch("https://mk-project19-1.onrender.com/api/scenarios/update/", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            // Hàm này sẽ đóng gói MỘT LẦN DUY NHẤT
+            body: JSON.stringify(updatePayload)
+        });
             
             if (res.ok) {
                 toast.success(`Đã đổ bê tông dữ liệu! PnL: $${editPnL}`);
