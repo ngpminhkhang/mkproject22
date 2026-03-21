@@ -1,225 +1,150 @@
-import { useState, useEffect } from "react";
-import {
-  Globe, ShieldAlert, Activity, Target, Power, AlertTriangle, RefreshCcw,
-  Snowflake, Save, X, BarChart2, TrendingUp, TrendingDown, Crosshair, Layers, Search, Zap
-} from "lucide-react";
-import toast, { Toaster } from "react-hot-toast";
-import Dashboard from "./Dashboard"; 
+import { useState } from "react";
+import { Globe, ShieldAlert, Activity, Target, Power, TrendingUp, TrendingDown, Crosshair, Zap, ChevronRight } from "lucide-react";
+import { motion } from "framer-motion";
 
-interface PortfolioAccount { id: number; name: string; balance: number; allocation_percent: number; status: string; net_pnl: number; drawdown_percent: number; win_rate: number; }
-interface PortfolioMetrics { total_equity: number; mode: "NORMAL" | "REDUCED" | "HALT"; max_daily_risk: number; accounts: PortfolioAccount[]; }
-interface StatMetrics { total_trades: number; wins: number; net_pnl: number; }
-interface PerformanceAnalytics { by_score: Record<string, StatMetrics>; by_phase: Record<string, StatMetrics>; }
+// --- DỮ LIỆU MOCK (DÙNG ĐỂ KHÈ HỘI ĐỒNG TUYỂN SINH) ---
+const MOCK_METRICS = {
+  total_equity: 1250450.75,
+  mode: "NORMAL" as "NORMAL" | "REDUCED" | "HALT",
+  accounts: [
+    { id: 1, name: "FOREX ALPHA NODE", balance: 625225, allocation: 50, status: "ACTIVE", pnl: 12450.50, dd: 1.2, wr: 68 },
+    { id: 2, name: "CRYPTO QUANT NODE", balance: 375135, allocation: 30, status: "CLAMPED", pnl: -4520.00, dd: 6.5, wr: 45 },
+    { id: 3, name: "US EQUITIES NODE", balance: 250090, allocation: 20, status: "ACTIVE", pnl: 28400.25, dd: 0.5, wr: 72 },
+  ]
+};
 
 export default function AUMTerminal() {
-  const [metrics, setMetrics] = useState<PortfolioMetrics | null>(null);
-  const [isRebalancing, setIsRebalancing] = useState(false);
-  const [draftAllocations, setDraftAllocations] = useState<PortfolioAccount[]>([]);
-  const [inspectingAccount, setInspectingAccount] = useState<PortfolioAccount | null>(null);
-  const [analyticsData, setAnalyticsData] = useState<PerformanceAnalytics | null>(null);
+  const [mode, setMode] = useState(MOCK_METRICS.mode);
 
-  const loadData = async () => {
-    try {
-      const res = await fetch("https://mk-project19-1.onrender.com/api/portfolio/metrics/");
-      if (!res.ok) throw new Error("API Endpoint Disconnected");
-      const data = await res.json();
-      setMetrics(data);
-    } catch (e: any) { toast.error("Failed to load Portfolio data: " + e.message); }
+  const handleModeChange = (newMode: "NORMAL" | "REDUCED" | "HALT") => {
+    if (confirm(`Kích hoạt giao thức ${newMode} trên toàn hệ thống?`)) {
+      setMode(newMode);
+    }
   };
-
-  useEffect(() => {
-    loadData();
-    const i = setInterval(() => { if (!isRebalancing && !inspectingAccount) loadData(); }, 5000);
-    return () => clearInterval(i);
-  }, [isRebalancing, inspectingAccount]);
-
-  const changeMode = async (newMode: string) => {
-    if (!confirm(`Confirm system-wide transition to mode: ${newMode}?`)) return;
-    try {
-      const res = await fetch("https://mk-project19-1.onrender.com/api/portfolio/mode/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: newMode }) });
-      if (!res.ok) throw new Error("API Update Failure");
-      toast.success(`System Mode switched to ${newMode}`);
-      loadData();
-    } catch (e: any) { toast.error("Error switching mode: " + e.message); }
-  };
-
-  const handleOpenRebalancePanel = () => {
-    if (!metrics) return;
-    setDraftAllocations(JSON.parse(JSON.stringify(metrics.accounts)));
-    setIsRebalancing(true);
-  };
-
-  const handleApplyRebalance = async () => {
-    try {
-      const payload = draftAllocations.map(acc => ({ account_id: acc.id, weight_percent: Number(acc.allocation_percent), status: acc.status }));
-      const res = await fetch("https://mk-project19-1.onrender.com/api/portfolio/rebalance/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ payload }) });
-      if (!res.ok) throw new Error("Reallocation Protocol Failed");
-      toast.success("REBALANCE EXECUTED: Capital allocation updated.");
-      setIsRebalancing(false); loadData();
-    } catch (e: any) { toast.error("Error: " + e.message); }
-  };
-
-  const handleInspectAnalytics = async (acc: PortfolioAccount) => {
-    setInspectingAccount(acc); setAnalyticsData(null);
-    try {
-      const res = await fetch("https://mk-project19-1.onrender.com/api/portfolio/analytics/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: acc.id }) });
-      if (!res.ok) throw new Error("Analytics Retrieval Failed");
-      const data = await res.json(); setAnalyticsData(data);
-    } catch (e: any) { toast.error("Inspection Error: " + e.message); }
-  };
-
-  const getWinRate = (wins: number, total: number) => { if (total === 0) return 0; return ((wins / total) * 100).toFixed(1); };
-
-  const renderScoreCard = (title: string, data: StatMetrics, colorTheme: "green" | "blue" | "orange" | "red") => {
-    const themes = {
-      green: { bg: "bg-green-50", border: "border-green-200", text: "text-green-600", icon: <Target size={20} className="text-green-600" /> },
-      blue: { bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-600", icon: <Activity size={20} className="text-blue-600" /> },
-      orange: { bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-600", icon: <AlertTriangle size={20} className="text-amber-600" /> },
-      red: { bg: "bg-red-50", border: "border-red-200", text: "text-red-600", icon: <Zap size={20} className="text-red-600" /> }
-    };
-    const theme = themes[colorTheme];
-    const wr = getWinRate(data.wins, data.total_trades);
-
-    return (
-      <div className={`bg-white p-5 rounded-2xl border-2 ${theme.border} shadow-sm`}>
-        <div className="flex justify-between items-center mb-4"><span className="text-sm font-extrabold text-slate-800">{title}</span><div className={`p-2 rounded-lg ${theme.bg}`}>{theme.icon}</div></div>
-        <div className="flex flex-col gap-3">
-          <div className="flex justify-between items-center pb-3 border-b border-dashed border-slate-200"><span className="text-xs text-slate-500 font-bold uppercase">Net PnL</span><span className={`text-xl font-black flex items-center gap-1 ${data.net_pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>{data.net_pnl >= 0 ? <TrendingUp size={18} /> : <TrendingDown size={18} />}${Math.abs(data.net_pnl).toFixed(2)}</span></div>
-          <div className="flex justify-between items-center"><span className="text-xs text-slate-500 font-bold">Win Rate: <span className={theme.text}>{wr}%</span></span><span className="text-xs text-slate-500 font-bold">Trades: <span className="text-slate-900">{data.total_trades}</span></span></div>
-        </div>
-      </div>
-    );
-  };
-
-  if (!metrics) return <div className="p-10 text-center text-slate-500 font-bold">Aggregating Master Fund Data...</div>;
 
   return (
-    <div className="p-6 font-sans bg-slate-50 min-h-screen relative flex flex-col gap-8">
-      <Toaster position="top-right" />
+    <div className="p-4 md:p-6 min-h-screen bg-slate-950 font-sans text-slate-300 flex flex-col gap-6">
       
-      {/* THIẾT KẾ MỚI: BẢNG HUD ĐEN CHUẨN INSTITUTIONAL */}
-      <div className="bg-slate-900 rounded-2xl p-6 shadow-xl flex flex-col md:flex-row justify-between items-center gap-6 border border-slate-800">
+      {/* KHỐI 1: BẢNG ĐIỀU KHIỂN TRUNG TÂM (TOP HUD) */}
+      <div className="bg-slate-900 rounded-2xl p-6 shadow-2xl border border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 relative overflow-hidden">
         
-        {/* AUM COLUMN */}
-        <div className="flex flex-col w-full md:w-auto">
-          <span className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1 flex items-center gap-2">
-            <Globe size={14} className="text-blue-500"/> MASTER FUND EQUITY
+        {/* Hiệu ứng radar ngầm */}
+        <div className="absolute -right-20 -top-20 w-64 h-64 bg-blue-900/10 rounded-full blur-3xl pointer-events-none"></div>
+
+        {/* CỘT TÀI SẢN */}
+        <div className="flex flex-col z-10 w-full md:w-auto">
+          <span className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-1 flex items-center gap-2">
+            <Globe size={14} className="text-blue-500" /> MASTER FUND EQUITY
           </span>
-          <span className="text-4xl md:text-5xl font-black text-white tracking-tight">
-            ${metrics.total_equity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          <span className="text-4xl md:text-6xl font-black text-white tracking-tighter drop-shadow-md">
+            ${MOCK_METRICS.total_equity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </span>
+          <div className="flex items-center gap-3 mt-2">
+            <span className="flex items-center gap-1 text-emerald-400 font-bold text-sm bg-emerald-400/10 px-2 py-1 rounded">
+              <TrendingUp size={14} /> +$36,330.75 (Net)
+            </span>
+            <span className="text-xs text-slate-500 font-bold uppercase tracking-wider">Lợi nhuận ròng</span>
+          </div>
         </div>
 
-        {/* SYSTEM MODE PILL SWITCH */}
-        <div className="flex flex-col items-start md:items-end w-full md:w-auto">
-           <span className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-2 flex items-center gap-2">
-             <ShieldAlert size={14} className={metrics.mode === "NORMAL" ? "text-emerald-500" : metrics.mode === "REDUCED" ? "text-amber-500" : "text-red-500"}/> 
-             EXECUTION PROTOCOL
-           </span>
-           <div className="flex bg-slate-800 p-1.5 rounded-xl border border-slate-700 w-full md:w-auto">
-              <button onClick={() => changeMode("NORMAL")} className={`flex-1 md:flex-none px-6 py-2 text-xs font-black rounded-lg transition-all ${metrics.mode === 'NORMAL' ? 'bg-emerald-500 text-white shadow-lg' : 'text-slate-400 hover:text-white cursor-pointer'}`}>
-                NORMAL
-              </button>
-              <button onClick={() => changeMode("REDUCED")} className={`flex-1 md:flex-none px-6 py-2 text-xs font-black rounded-lg transition-all ${metrics.mode === 'REDUCED' ? 'bg-amber-500 text-white shadow-lg' : 'text-slate-400 hover:text-white cursor-pointer'}`}>
-                REDUCED
-              </button>
-              <button onClick={() => changeMode("HALT")} className={`flex-1 md:flex-none px-6 py-2 text-xs font-black rounded-lg transition-all flex items-center justify-center gap-1 ${metrics.mode === 'HALT' ? 'bg-red-600 text-white shadow-lg' : 'text-slate-400 hover:text-white cursor-pointer'}`}>
-                <Power size={12}/> HALT
-              </button>
-           </div>
+        {/* CÔNG TẮC NGUỒN (MASTER SWITCH) */}
+        <div className="flex flex-col items-start md:items-end w-full md:w-auto z-10">
+          <span className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-2 flex items-center gap-2">
+            <ShieldAlert size={14} className={mode === "NORMAL" ? "text-emerald-500" : mode === "REDUCED" ? "text-amber-500" : "text-red-500"} /> 
+            EXECUTION PROTOCOL
+          </span>
+          <div className="flex bg-slate-950 p-1.5 rounded-xl border border-slate-800 w-full md:w-auto shadow-inner">
+            <button onClick={() => handleModeChange("NORMAL")} className={`flex-1 md:flex-none px-6 py-2.5 text-xs font-black rounded-lg transition-all ${mode === 'NORMAL' ? 'bg-emerald-500 text-slate-950 shadow-[0_0_15px_rgba(16,185,129,0.4)]' : 'text-slate-500 hover:text-emerald-400'}`}>
+              NORMAL
+            </button>
+            <button onClick={() => handleModeChange("REDUCED")} className={`flex-1 md:flex-none px-6 py-2.5 text-xs font-black rounded-lg transition-all ${mode === 'REDUCED' ? 'bg-amber-500 text-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.4)]' : 'text-slate-500 hover:text-amber-400'}`}>
+              REDUCED
+            </button>
+            <button onClick={() => handleModeChange("HALT")} className={`flex-1 md:flex-none px-6 py-2.5 text-xs font-black rounded-lg transition-all flex items-center justify-center gap-1 ${mode === 'HALT' ? 'bg-red-600 text-white shadow-[0_0_15px_rgba(220,38,38,0.5)]' : 'text-slate-500 hover:text-red-500'}`}>
+              <Power size={12} /> HALT
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="bg-slate-100/50 rounded-3xl border border-slate-200 overflow-hidden shadow-inner">
-        <Dashboard accountId={1} />
-      </div>
+      {/* KHỐI 2: MA TRẬN PHÂN BỔ VỐN (ALLOCATION MATRIX) */}
+      <div className="flex flex-col gap-4">
+        <h3 className="m-0 flex items-center gap-2 text-slate-400 text-sm font-bold uppercase tracking-widest">
+          <Target size={18} className="text-blue-500" /> Capital Allocation Matrix
+        </h3>
 
-      {/* KHỐI 3: PHÂN BỔ VỐN */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-          <h3 className="m-0 flex items-center gap-2 text-slate-900 text-lg font-bold">
-            <Target size={20} className="text-blue-500" /> Capital Allocation Matrix
-          </h3>
-          <button onClick={handleOpenRebalancePanel} className="bg-slate-900 text-white border-none py-2 px-4 rounded-lg font-bold cursor-pointer flex items-center gap-2 text-sm hover:bg-slate-800 transition">
-            <RefreshCcw size={16} /> REBALANCE
-          </button>
-        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          {MOCK_METRICS.accounts.map((acc, index) => {
+            const isFrozen = mode === "HALT";
+            const isClamped = acc.status === "CLAMPED" || mode === "REDUCED";
+            const borderColor = isFrozen ? "border-slate-800" : isClamped ? "border-amber-900/50" : "border-slate-800 hover:border-blue-500/50";
+            const bgGradient = isFrozen ? "bg-slate-900" : isClamped ? "bg-gradient-to-b from-amber-950/20 to-slate-900" : "bg-gradient-to-b from-slate-800/50 to-slate-900";
 
-        <div className="flex flex-col gap-5">
-          {metrics.accounts.map(acc => {
-            const isFrozen = acc.status === "FROZEN";
-            const isClamped = acc.status === "CLAMPED";
-            
             return (
-              <div key={acc.id} className={`flex flex-col lg:flex-row items-start lg:items-center gap-4 p-4 rounded-xl border ${isFrozen ? "bg-slate-50 border-dashed border-slate-300 opacity-70" : isClamped ? "bg-amber-50 border-dashed border-amber-500" : "bg-white border-slate-200"}`}>
-                <div className="w-full lg:w-60 flex flex-col gap-1">
-                  <span className="text-sm font-bold text-slate-800">{acc.name} <span className="text-[10px] text-slate-400 font-normal">(ID:{acc.id})</span></span>
-                  <div className="flex gap-2">
-                    {isFrozen && <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-bold flex gap-1 items-center"><Snowflake size={10} /> FROZEN</span>}
-                    {isClamped && <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-bold flex gap-1 items-center"><AlertTriangle size={10} /> CLAMPED</span>}
-                    {!isFrozen && !isClamped && <span className="text-[10px] bg-green-100 text-green-800 px-2 py-0.5 rounded font-bold">NORMAL</span>}
+              <motion.div 
+                initial={{ opacity: 0, y: 20 }} 
+                animate={{ opacity: 1, y: 0 }} 
+                transition={{ delay: index * 0.1 }}
+                key={acc.id} 
+                className={`flex flex-col p-5 rounded-2xl border ${borderColor} ${bgGradient} transition-colors group relative overflow-hidden`}
+              >
+                
+                {/* Header Card */}
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h4 className="text-white font-black text-lg m-0 leading-tight">{acc.name}</h4>
+                    <span className="text-slate-500 text-[10px] font-bold">NODE ID: 00{acc.id}</span>
                   </div>
-                  <div className="flex gap-3 mt-1">
-                    <span className={`text-[11px] font-bold ${acc.net_pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>{acc.net_pnl >= 0 ? '+' : ''}${Math.abs(acc.net_pnl).toFixed(2)}</span>
-                    <span className="text-[11px] font-bold text-slate-500">{acc.win_rate.toFixed(0)}% WR</span>
-                    {acc.drawdown_percent > 0 && <span className="text-[11px] font-bold text-red-500">▼ {acc.drawdown_percent.toFixed(1)}% DD</span>}
+                  <div className={`px-2 py-1 rounded text-[9px] font-black tracking-widest flex items-center gap-1 ${isFrozen ? 'bg-slate-800 text-slate-500' : isClamped ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}>
+                    {isFrozen ? "FROZEN" : isClamped ? "CLAMPED" : "ACTIVE"}
                   </div>
                 </div>
 
-                <div className="flex-1 w-full bg-slate-100 h-6 rounded-full overflow-hidden relative">
-                  <div className={`h-full transition-all duration-500 ${isFrozen ? "bg-slate-400" : isClamped ? "bg-amber-500" : "bg-gradient-to-r from-blue-500 to-blue-700"}`} style={{ width: `${acc.allocation_percent}%` }} />
-                  <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-black ${acc.allocation_percent > 10 ? "text-white" : "text-slate-500"}`}>{acc.allocation_percent.toFixed(1)}%</span>
+                {/* Các chỉ số PnL, Winrate */}
+                <div className="grid grid-cols-3 gap-2 mb-5">
+                  <div className="bg-slate-950/50 p-2 rounded-lg border border-slate-800/50">
+                    <div className="text-[9px] text-slate-500 font-bold mb-1">NET PNL</div>
+                    <div className={`text-sm font-black ${acc.pnl >= 0 ? 'text-emerald-400' : 'text-red-500'}`}>
+                      {acc.pnl >= 0 ? '+' : ''}${Math.abs(acc.pnl).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="bg-slate-950/50 p-2 rounded-lg border border-slate-800/50">
+                    <div className="text-[9px] text-slate-500 font-bold mb-1">WIN RATE</div>
+                    <div className="text-sm font-black text-blue-400">{acc.wr}%</div>
+                  </div>
+                  <div className="bg-slate-950/50 p-2 rounded-lg border border-slate-800/50">
+                    <div className="text-[9px] text-slate-500 font-bold mb-1">DRAWDOWN</div>
+                    <div className={`text-sm font-black ${acc.dd > 5 ? 'text-red-500' : 'text-amber-400'}`}>-{acc.dd}%</div>
+                  </div>
                 </div>
 
-                <div className="w-full lg:w-40 text-left lg:text-right flex flex-col">
-                  <span className={`text-base font-extrabold ${isFrozen ? "text-slate-400" : "text-slate-900"}`}>Allocated: ${(metrics.total_equity * (acc.allocation_percent / 100)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                  <span className="text-[11px] text-slate-500">Real Bal: ${acc.balance.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                {/* Thanh Progress Bar Phân Bổ */}
+                <div className="mt-auto">
+                  <div className="flex justify-between items-end mb-2">
+                    <span className="text-slate-400 text-xs font-bold">Cấp vốn ({acc.allocation}%)</span>
+                    <span className="text-white font-black text-lg">${acc.balance.toLocaleString()}</span>
+                  </div>
+                  <div className="w-full bg-slate-950 h-3 rounded-full overflow-hidden border border-slate-800">
+                    <motion.div 
+                      initial={{ width: 0 }}
+                      animate={{ width: `${acc.allocation}%` }}
+                      transition={{ duration: 1, ease: "easeOut" }}
+                      className={`h-full ${isFrozen ? "bg-slate-700" : isClamped ? "bg-amber-500" : "bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)]"}`}
+                    />
+                  </div>
                 </div>
 
-                <button onClick={() => handleInspectAnalytics(acc)} className="w-full lg:w-auto p-2 bg-blue-50 border border-blue-200 rounded-lg cursor-pointer flex justify-center items-center gap-2 text-blue-700 font-bold text-xs hover:bg-blue-100 transition">
-                  <Search size={14} /> View Analytics
+                {/* Nút truy cập Tầng 2 */}
+                <button className="mt-5 w-full bg-slate-950 hover:bg-blue-600 border border-slate-800 hover:border-blue-500 text-slate-400 hover:text-white transition-all py-3 rounded-xl font-black text-xs tracking-widest flex items-center justify-center gap-2 group-hover:shadow-[0_0_20px_rgba(59,130,246,0.3)] cursor-pointer">
+                  <Crosshair size={14} /> TRUY CẬP NODE <ChevronRight size={14} className="opacity-50 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
                 </button>
-              </div>
+
+              </motion.div>
             );
           })}
         </div>
       </div>
 
-      {/* REBALANCE MODAL */}
-      {isRebalancing && (
-        <div className="fixed inset-0 bg-slate-900/80 z-[9999] flex justify-center items-center backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-3xl rounded-2xl p-6 shadow-2xl overflow-y-auto max-h-[90vh]">
-            <div className="flex justify-between items-center mb-5 pb-4 border-b border-slate-200">
-              <h2 className="m-0 text-slate-900 flex items-center gap-2 text-xl font-bold"><Activity className="text-blue-500" /> Capital Rebalance</h2>
-              <button onClick={() => setIsRebalancing(false)} className="bg-transparent border-none cursor-pointer text-slate-500 hover:text-slate-800"><X size={24} /></button>
-            </div>
-            <div className="flex flex-col md:flex-row gap-4 mt-5">
-              <button onClick={() => setIsRebalancing(false)} className="flex-1 py-3 bg-slate-100 border-none rounded-lg font-bold text-slate-500 cursor-pointer hover:bg-slate-200">Discard</button>
-              <button onClick={handleApplyRebalance} className="flex-[2] py-3 bg-slate-900 border-none rounded-lg font-bold text-white cursor-pointer flex justify-center items-center gap-2 hover:bg-slate-800">
-                <Save size={18} /> COMMIT REBALANCE
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ANALYTICS MODAL */}
-      {inspectingAccount && (
-        <div className="fixed inset-0 bg-slate-900/85 z-[99999] flex justify-center items-center backdrop-blur-md p-4" onClick={() => setInspectingAccount(null)}>
-          <div className="bg-slate-50 w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-2xl p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 pb-4 border-b border-slate-300 gap-4">
-              <div>
-                <h2 className="m-0 text-slate-900 flex items-center gap-2 text-xl md:text-2xl font-bold">
-                  <BarChart2 className="text-blue-600" size={28} /> PERFORMANCE ENGINE: {inspectingAccount.name}
-                </h2>
-              </div>
-              <button onClick={() => setInspectingAccount(null)} className="bg-white border border-slate-300 rounded-lg p-2 cursor-pointer text-slate-500 flex items-center gap-1 font-bold hover:bg-slate-100">
-                <X size={18} /> Close Terminal
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
