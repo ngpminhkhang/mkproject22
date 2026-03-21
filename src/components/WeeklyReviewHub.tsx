@@ -131,19 +131,37 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
     useEffect(() => { loadData(); }, [currentWeek, accountId]);
 
     const handleSaveReview = async () => {
-        try {
-            const wins = trades.filter(t => t.outcome === 'win').length;
-            const netPnl = trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0);
-            const payload = {
-                week_start_date: currentWeek, account_id: accountId, total_trades: trades.length,
-                win_rate: trades.length > 0 ? (wins / trades.length) * 100 : 0, net_pnl: netPnl,
-                fa_accuracy: faScore, ta_accuracy: taScore, fusion_score: fusionScore,
-                review_details: details // Bắn thẳng object
-            };
-            await fetch("https://mk-project19-1.onrender.com/api/reviews/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-            toast.success("Hồ sơ thẩm vấn đã được cất vào két!");
-        } catch (e) { toast.error("Cáp quang đứt: " + String(e)); }
-    };
+    try {
+        // CHUYẾN XE 1: Chở dữ liệu Review & Psychology (Như cũ)
+        const wins = trades.filter(t => t.outcome === 'win').length;
+        const netPnl = trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0);
+        const payload = {
+            week_start_date: currentWeek, account_id: accountId, total_trades: trades.length,
+            win_rate: trades.length > 0 ? (wins / trades.length) * 100 : 0, net_pnl: netPnl,
+            fa_accuracy: faScore, ta_accuracy: taScore, fusion_score: fusionScore,
+            review_details: details 
+        };
+        await fetch("https://mk-project19-1.onrender.com/api/reviews/", { 
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) 
+        });
+
+        // CHUYẾN XE 2 (MỚI THÊM): Chở Technical Plan & Execution Script sang hầm Outlook
+        const outlookPayload = {
+            week_start_date: currentWeek,
+            account_id: accountId,
+            fa_bias: JSON.stringify({ technical_plan: outlookSnapshot.technical, planned: outlookSnapshot.matrix }),
+            final_bias: outlookSnapshot.bias,
+            script_plan: outlookSnapshot.plan
+        };
+        await fetch("https://mk-project19-1.onrender.com/api/outlook/current/", {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(outlookPayload)
+        });
+
+        toast.success("Hồ sơ thẩm vấn đã được cất vào két!");
+    } catch (e) { 
+        toast.error("Cáp quang đứt: " + String(e)); 
+    }
+  };
 
     const openAddMissed = () => {
         setEditingMissedItem(null);
