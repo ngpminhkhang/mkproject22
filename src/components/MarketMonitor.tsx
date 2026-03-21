@@ -3,7 +3,7 @@ import { Zap, Clock, LayoutGrid, Volume2, VolumeX, ArrowRightCircle, Activity, S
 import { Toaster, toast } from 'react-hot-toast';
 import { motion } from "framer-motion";
 
-interface MarketSignal { symbol: string; direction: "BUY" | "SELL" | "NEUTRAL"; active_tags: any; is_alerting: boolean; score: number; timestamp: number; }
+interface MarketSignal { symbol: string; direction: "BUY" | "SELL" | "NEUTRAL"; active_tags: string[]; is_alerting: boolean; score: number; timestamp: number; }
 interface MonitorCardItem { symbol: string; bias: "BUY" | "SELL" | "NEUTRAL"; signal?: MarketSignal; lastUpdate: number; }
 
 const ALL_TAGS_DEF = [
@@ -13,7 +13,6 @@ const ALL_TAGS_DEF = [
     { id: 'MACD_POS', label: 'MACD > 0', group: 'TREND' }, { id: 'MACD_NEG', label: 'MACD < 0', group: 'TREND' },
 ];
 
-// KHIÊN TITAN: Đập nát mọi loại rác dữ liệu
 const parseDeep = (val: any, fallback: any = []): any => {
     if (!val) return fallback;
     if (typeof val === 'object') return val;
@@ -47,7 +46,6 @@ export default function MarketMonitor({ onTradeNow }: { onTradeNow: (s: any) => 
             setIsMt5Alive(true);
             const weekDate = getMondayLocal(new Date());
             
-            // [CHỐNG ĐÔNG CACHE] Ép tải mới
             const outRes = await fetch(`https://mk-project19-1.onrender.com/api/outlook/current/?week_start=${weekDate}&t=${Date.now()}`);
             const map = new Map<string, MonitorCardItem>();
 
@@ -67,15 +65,15 @@ export default function MarketMonitor({ onTradeNow }: { onTradeNow: (s: any) => 
             }
 
             try {
-                // [TỬ HUYỆT ĐÃ BỊ PHÁ] Thêm ?t=Date.now() đập chết bộ nhớ đệm Chrome
-                const sigRes = await fetch(`https://mk-project19-1.onrender.com/api/mt5/radar/?t=${Date.now()}`);
+                // CHỈ CHẠY ĐƯỜNG CAO TỐC V2 (RADAR_V2) ĐỂ NÉ MA
+                const sigRes = await fetch(`https://mk-project19-1.onrender.com/api/mt5/radar_v2/?t=${Date.now()}`);
                 if (sigRes.ok) {
                     const sigData = await sigRes.json();
                     const signals: MarketSignal[] = sigData.radar_blips || [];
                     const now = Date.now();
                     
                     signals.forEach(sig => {
-                        if (!sig || !sig.symbol) return; // KHIÊN ĐỠ RÁC ĐỜI TỐNG
+                        if (!sig || !sig.symbol) return;
                         const cleanSym = sig.symbol.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
                         if (dismissedSignals.includes(cleanSym)) return;
                         
@@ -93,7 +91,6 @@ export default function MarketMonitor({ onTradeNow }: { onTradeNow: (s: any) => 
         } catch (e) { setIsMt5Alive(false); }
     };
 
-    // Quét liên tục 3 giây 1 lần
     useEffect(() => { syncData(); const i = setInterval(syncData, 3000); return () => clearInterval(i); }, [soundEnabled, dismissedSignals]);
 
     const handleTradeClick = (item: MonitorCardItem, activeTags: string[]) => {
@@ -128,7 +125,6 @@ export default function MarketMonitor({ onTradeNow }: { onTradeNow: (s: any) => 
                 )}
                 {monitorList.map(item => {
                     const hasSignal = item.signal && (Date.now() - item.lastUpdate < 300000);
-                    // Rút mảng Tag an toàn
                     const activeTags = hasSignal ? ensureArray(parseDeep(item.signal?.active_tags, [])) : [];
                     const isPlanBuy = item.bias === 'BUY';
                     const planColor = isPlanBuy ? '#16a34a' : '#dc2626';
