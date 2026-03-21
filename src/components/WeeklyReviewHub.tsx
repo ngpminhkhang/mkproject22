@@ -7,15 +7,15 @@ const DEFAULT_HABITS = { sleep: false, meditate: false, checklist: false, workou
 const DEFAULT_DETAILS = { stress: 5, focus: 5, discipline: 5, journal_narrative: "", habits: DEFAULT_HABITS, psy_notes: [] };
 const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
-// BỘ ĐỌC DỮ LIỆU ĐA TẦNG V2 - MIỄN NHIỄM CRASH
+// BỘ ĐỌC DỮ LIỆU ĐA TẦNG V2 - THEO ĐÚNG SÁCH GIÁO KHOA CỦA SẾP
 const safeJSONParse = (val: any, fallback: any = {}) => {
     try {
         if (val === null || val === undefined) return fallback;
         if (typeof val === "object") return val;
         if (typeof val === "string") {
-            if (!val.trim() || val === "[]" || val === "{}") return fallback;
+            if (!val.trim()) return fallback;
             let parsed = JSON.parse(val);
-            while (typeof parsed === "string") {
+            if (typeof parsed === "string") {
                 parsed = JSON.parse(parsed);
             }
             return parsed;
@@ -134,15 +134,23 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
         try {
             const wins = trades.filter(t => t.outcome === 'win').length;
             const netPnl = trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0);
+            
+            // THEO ĐÚNG SÁCH GIÁO KHOA: KHÔNG STRINGIFY DETAILS
             const payload = {
                 week_start_date: currentWeek, account_id: accountId, total_trades: trades.length,
                 win_rate: trades.length > 0 ? (wins / trades.length) * 100 : 0, net_pnl: netPnl,
                 fa_accuracy: faScore, ta_accuracy: taScore, fusion_score: fusionScore,
-                review_details: details // Bắn thẳng object
+                review_details: details 
             };
-            await fetch("https://mk-project19-1.onrender.com/api/reviews/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+            
+            await fetch("https://mk-project19-1.onrender.com/api/reviews/", { 
+                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) 
+            });
+            
             toast.success("Hồ sơ thẩm vấn đã được cất vào két!");
-        } catch (e) { toast.error("Cáp quang đứt: " + String(e)); }
+        } catch (e) { 
+            toast.error("Cáp quang đứt: " + String(e)); 
+        }
     };
 
     const openAddMissed = () => {
@@ -160,8 +168,8 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                 const updatePayload = {
                     input: {
                         uuid: editingMissedItem.uuid,
-                        analysis_details: { notes: missedForm.notes }, 
-                        images: missedForm.image_paths 
+                        analysis_details: { notes: missedForm.notes },
+                        images: missedForm.image_paths
                     }
                 };
                 await fetch(`${baseUrl}/update/`, {
@@ -190,8 +198,8 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                     body: JSON.stringify({
                         input: { 
                             uuid: newUuid, 
-                            analysis_details: { notes: missedForm.notes }, 
-                            images: missedForm.image_paths 
+                            analysis_details: { notes: missedForm.notes },
+                            images: missedForm.image_paths
                         }
                     })
                 });
