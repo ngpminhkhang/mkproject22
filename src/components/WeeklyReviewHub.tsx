@@ -7,16 +7,15 @@ const DEFAULT_HABITS = { sleep: false, meditate: false, checklist: false, workou
 const DEFAULT_DETAILS = { stress: 5, focus: 5, discipline: 5, journal_narrative: "", habits: DEFAULT_HABITS, psy_notes: [] };
 const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
-// BỘ ĐỌC DỮ LIỆU ĐA TẦNG V3 - MIỄN NHIỄM CRASH
+// BỘ ĐỌC DỮ LIỆU ĐA TẦNG V2 - THEO ĐÚNG SÁCH GIÁO KHOA CỦA SẾP
 const safeJSONParse = (val: any, fallback: any = {}) => {
     try {
         if (val === null || val === undefined) return fallback;
         if (typeof val === "object") return val;
         if (typeof val === "string") {
-            const trimmed = val.trim();
-            if (!trimmed || trimmed === "[]" || trimmed === "{}") return fallback;
-            let parsed = JSON.parse(trimmed);
-            while (typeof parsed === "string") {
+            if (!val.trim()) return fallback;
+            let parsed = JSON.parse(val);
+            if (typeof parsed === "string") {
                 parsed = JSON.parse(parsed);
             }
             return parsed;
@@ -53,15 +52,11 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
     const [trades, setTrades] = useState<any[]>([]);
     const [missedTrades, setMissedTrades] = useState<any[]>([]);
     const [setups, setSetups] = useState<any[]>([]);
-    
-    // STATE CHO TAB FUSION
     const [outlookSnapshot, setOutlookSnapshot] = useState<{ bias: string, plan: string, technical: string, matrix: any[] }>({ bias: '...', plan: '...', technical: '...', matrix: [] });
     const [faScore, setFaScore] = useState(5);
     const [taScore, setTaScore] = useState(5);
     const [fusionScore, setFusionScore] = useState(5);
     const [details, setDetails] = useState<any>(DEFAULT_DETAILS);
-    
-    // STATE CHO TAB PSYCHOLOGY
     const [showPsyForm, setShowPsyForm] = useState(false);
     const [editingPsyItem, setEditingPsyItem] = useState<any | null>(null);
     const [psyForm, setPsyForm] = useState({ emotion: "Normal", context: "Pre-Trade", note: "" });
@@ -77,8 +72,6 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
         setIsLoading(true);
         try {
             const baseUrl = "https://mk-project19-1.onrender.com/api";
-            
-            // 1. TẢI TRADE & MISSED
             const scenRes = await fetch(`${baseUrl}/scenarios/?accountId=${accountId}&t=${Date.now()}`);
             const allScenarios = await scenRes.json();
             if (Array.isArray(allScenarios)) {
@@ -103,46 +96,35 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                 setMissedTrades(autoMissed.sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
             }
 
-            // 2. TẢI REVIEW METRICS
             const revRes = await fetch(`${baseUrl}/reviews/?week_start=${currentWeek}&t=${Date.now()}`);
             if (revRes.ok) {
                 const rev = await revRes.json();
                 if (rev.fa_accuracy) {
                     setFaScore(rev.fa_accuracy);
-                    setTaScore(rev.ta_accuracy); 
-                    setFusionScore(rev.fusion_score);
+                    setTaScore(rev.ta_accuracy); setFusionScore(rev.fusion_score);
                     const parsedDetails = ensureObject(safeJSONParse(rev.review_details, DEFAULT_DETAILS));
                     setDetails({ ...DEFAULT_DETAILS, ...parsedDetails, habits: { ...DEFAULT_HABITS, ...(parsedDetails.habits || {}) }, psy_notes: parsedDetails.psy_notes || [] });
-                } else { 
-                    setFaScore(5); setTaScore(5); setFusionScore(5); setDetails(DEFAULT_DETAILS); 
-                }
+                } else { setFaScore(5); setTaScore(5); setFusionScore(5); setDetails(DEFAULT_DETAILS); }
             }
 
-            // 3. TẢI OUTLOOK & TECHNICAL PLAN (Khớp ống nước Backend)
             const outRes = await fetch(`${baseUrl}/outlook/current/?week_start=${currentWeek}&t=${Date.now()}`);
             if (outRes.ok) {
                 const out = await outRes.json();
-                if (!out.error && out.status !== "empty") {
+                if (!out.error) {
                     const fa = ensureObject(safeJSONParse(out.fa_bias, {}));
                     setOutlookSnapshot({ 
-                        bias: out.final_bias || "NEUTRAL", 
-                        plan: out.script_plan || "", 
+                        bias: out.weekly_bias || "NEUTRAL", 
+                        plan: out.execution_script || "", 
                         technical: fa.technical_plan || "",
                         matrix: Array.isArray(fa.planned) ? fa.planned : [] 
                     });
-                } else {
-                    // Reset nếu tuần này chưa có dữ liệu
-                    setOutlookSnapshot({ bias: 'NEUTRAL', plan: '', technical: '', matrix: [] });
                 }
             }
 
-            // 4. TẢI SETUP LIBRARY
             const libRes = await fetch(`${baseUrl}/library/?category=SETUP`);
             if (libRes.ok) setSetups(await libRes.json());
 
-        } catch (e) { 
-            toast.error("Lỗi cáp quang: " + String(e)); 
-        }
+        } catch (e) { toast.error("Lỗi cáp quang: " + String(e)); }
         setIsLoading(false);
     };
 
@@ -150,33 +132,21 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
 
     const handleSaveReview = async () => {
         try {
-            // ĐỘI XE 1: CHỞ CHỈ SỐ REVIEW
             const wins = trades.filter(t => t.outcome === 'win').length;
             const netPnl = trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0);
-            const reviewPayload = {
+            
+            // THEO ĐÚNG SÁCH GIÁO KHOA: KHÔNG STRINGIFY DETAILS
+            const payload = {
                 week_start_date: currentWeek, account_id: accountId, total_trades: trades.length,
                 win_rate: trades.length > 0 ? (wins / trades.length) * 100 : 0, net_pnl: netPnl,
                 fa_accuracy: faScore, ta_accuracy: taScore, fusion_score: fusionScore,
-                review_details: details // Bắn thẳng Object thuần
+                review_details: details 
             };
             
             await fetch("https://mk-project19-1.onrender.com/api/reviews/", { 
-                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(reviewPayload) 
+                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) 
             });
-
-            // ĐỘI XE 2: CHỞ TECHNICAL PLAN VÀO OUTLOOK
-            const outlookPayload = {
-                week_start_date: currentWeek,
-                account_id: accountId,
-                fa_bias: { technical_plan: outlookSnapshot.technical, planned: outlookSnapshot.matrix }, // Object thuần
-                final_bias: outlookSnapshot.bias,
-                script_plan: outlookSnapshot.plan
-            };
             
-            await fetch("https://mk-project19-1.onrender.com/api/outlook/current/", {
-                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(outlookPayload)
-            });
-
             toast.success("Hồ sơ thẩm vấn đã được cất vào két!");
         } catch (e) { 
             toast.error("Cáp quang đứt: " + String(e)); 
@@ -198,8 +168,8 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                 const updatePayload = {
                     input: {
                         uuid: editingMissedItem.uuid,
-                        analysis_details: { notes: missedForm.notes }, // Object thuần
-                        images: missedForm.image_paths // Array thuần
+                        analysis_details: { notes: missedForm.notes },
+                        images: missedForm.image_paths
                     }
                 };
                 await fetch(`${baseUrl}/update/`, {
@@ -228,8 +198,8 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                     body: JSON.stringify({
                         input: { 
                             uuid: newUuid, 
-                            analysis_details: { notes: missedForm.notes }, // Object thuần
-                            images: missedForm.image_paths // Array thuần
+                            analysis_details: { notes: missedForm.notes },
+                            images: missedForm.image_paths
                         }
                     })
                 });
@@ -252,9 +222,7 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
             });
             toast.success("Đã ném vào máy hủy tài liệu!");
             loadData();
-        } catch (e) { 
-            toast.error("Lỗi: " + e); 
-        }
+        } catch (e) { toast.error("Lỗi: " + e); }
     };
 
     const handleSavePsyNote = () => {
@@ -262,38 +230,23 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
         let updatedNotes = [...(details.psy_notes || [])];
         if (editingPsyItem) {
             updatedNotes = updatedNotes.map((n: any) => n.id === editingPsyItem.id ? { ...n, ...psyForm } : n);
-            toast.success("Đã cập nhật!");
+            toast.success("Updated Note!");
         } else {
             const newNote = { id: Date.now(), ...psyForm, timestamp: Date.now() };
             updatedNotes = [newNote, ...updatedNotes];
-            toast.success("Đã thêm!");
+            toast.success("Added Note!");
         }
         setDetails((prev: any) => ({ ...prev, psy_notes: updatedNotes }));
         setPsyForm({ emotion: "Normal", context: "Pre-Trade", note: "" });
-        setShowPsyForm(false); 
-        setEditingPsyItem(null);
+        setShowPsyForm(false); setEditingPsyItem(null);
     };
 
-    const handleEditPsyNote = (note: any) => { 
-        setEditingPsyItem(note); 
-        setPsyForm({ emotion: note.emotion, context: note.context || "Pre-Trade", note: note.note }); 
-        setShowPsyForm(true); 
-    };
-    
-    const handleDeletePsyNote = (id: number) => { 
-        if (!confirm("Xóa dòng tâm sự này?")) return; 
-        setDetails((prev: any) => ({ ...prev, psy_notes: (details.psy_notes || []).filter((n: any) => n.id !== id) })); 
-        toast.success("Đã xóa!"); 
-    };
+    const handleEditPsyNote = (note: any) => { setEditingPsyItem(note); setPsyForm({ emotion: note.emotion, context: note.context || "Pre-Trade", note: note.note }); setShowPsyForm(true); };
+    const handleDeletePsyNote = (id: number) => { if (!confirm("Delete this thought?")) return; setDetails((prev: any) => ({ ...prev, psy_notes: (details.psy_notes || []).filter((n: any) => n.id !== id) })); toast.success("Deleted!"); };
 
     const mistakeData = useMemo(() => {
         const data: { [key: string]: number } = {};
-        trades.forEach(t => { 
-            if (t.mistake && t.mistake !== 'None' && t.pnl < 0) { 
-                if (!data[t.mistake]) data[t.mistake] = 0; 
-                data[t.mistake] += Math.abs(Number(t.pnl) || 0); 
-            } 
-        });
+        trades.forEach(t => { if (t.mistake && t.mistake !== 'None' && t.pnl < 0) { if (!data[t.mistake]) data[t.mistake] = 0; data[t.mistake] += Math.abs(Number(t.pnl) || 0); } });
         return Object.keys(data).map(k => ({ name: k, value: data[k] }));
     }, [trades]);
 
@@ -303,20 +256,15 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
         trades.forEach(t => {
             const setupName = setups.find((s: any) => s.id === t.setup_id)?.title || "Manual";
             if (!data[setupName]) data[setupName] = { pnl: 0, count: 0 };
-            data[setupName].pnl += (Number(t.pnl) || 0); 
-            data[setupName].count += 1;
+            data[setupName].pnl += (Number(t.pnl) || 0); data[setupName].count += 1;
         });
         return Object.keys(data).map(k => ({ name: k, pnl: data[k].pnl, count: data[k].count }));
     }, [trades, setups]);
 
     const missedAnalytics = useMemo(() => {
         if (missedTrades.length === 0) return null;
-        const reasons: { [key: string]: number } = {}; 
-        const pairs: { [key: string]: number } = {};
-        missedTrades.forEach(m => { 
-            reasons[m.reason] = (reasons[m.reason] || 0) + 1; 
-            pairs[m.pair] = (pairs[m.pair] || 0) + 1; 
-        });
+        const reasons: { [key: string]: number } = {}; const pairs: { [key: string]: number } = {};
+        missedTrades.forEach(m => { reasons[m.reason] = (reasons[m.reason] || 0) + 1; pairs[m.pair] = (pairs[m.pair] || 0) + 1; });
         const sortedReasons = Object.entries(reasons).sort((a, b) => b[1] - a[1]);
         const topPair = Object.entries(pairs).sort((a, b) => b[1] - a[1])[0]?.[0] || "None";
         let insight = "Thu thập thêm dữ liệu...";
@@ -368,11 +316,7 @@ export default function WeeklyReviewHub({ accountId = 1 }: { accountId?: number 
                         <div style={{ background: '#eff6ff', border: '1px solid #dbeafe', borderRadius: '8px', padding: '15px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                                 <h3 style={{ margin: 0, color: '#1e40af', fontSize: '14px', display: 'flex', gap: '5px', alignItems: 'center' }}><Search size={16} /> WEEKLY OUTLOOK</h3>
-                                <select value={outlookSnapshot.bias} onChange={e => setOutlookSnapshot({ ...outlookSnapshot, bias: e.target.value })} style={{ fontSize: '11px', fontWeight: 'bold', padding: '4px 8px', borderRadius: '4px', background: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0', outline: 'none' }}>
-                                    <option value="BULLISH">BULLISH</option>
-                                    <option value="BEARISH">BEARISH</option>
-                                    <option value="NEUTRAL">NEUTRAL</option>
-                                </select>
+                                <span style={{ fontSize: '11px', fontWeight: 'bold', padding: '2px 8px', borderRadius: '4px', background: '#dcfce7', color: '#166534' }}>{outlookSnapshot.bias}</span>
                             </div>
                             <div style={{ marginBottom: '10px' }}>
                                 <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#3b82f6', marginBottom: '4px' }}>TECHNICAL PLAN</div>
