@@ -3,7 +3,7 @@ import { Zap, Clock, LayoutGrid, Volume2, VolumeX, ArrowRightCircle, Activity, S
 import { Toaster, toast } from 'react-hot-toast';
 import { motion } from "framer-motion";
 
-interface MarketSignal { symbol: string; direction: "BUY" | "SELL" | "NEUTRAL"; active_tags: string[]; is_alerting: boolean; score: number; timestamp: number; }
+interface MarketSignal { symbol: string; direction: "BUY" | "SELL" | "NEUTRAL"; active_tags: any; is_alerting: boolean; score: number; timestamp: number; }
 interface MonitorCardItem { symbol: string; bias: "BUY" | "SELL" | "NEUTRAL"; signal?: MarketSignal; lastUpdate: number; }
 
 const ALL_TAGS_DEF = [
@@ -12,6 +12,14 @@ const ALL_TAGS_DEF = [
     { id: 'MACD_CROSS_UP', label: 'MACD Cross Up', group: 'TREND' }, { id: 'MACD_CROSS_DOWN', label: 'MACD Cross Down', group: 'TREND' },
     { id: 'MACD_POS', label: 'MACD > 0', group: 'TREND' }, { id: 'MACD_NEG', label: 'MACD < 0', group: 'TREND' },
 ];
+
+// KHIÊN TITAN: Đập nát mọi loại rác dữ liệu
+const parseDeep = (val: any, fallback: any = []): any => {
+    if (!val) return fallback;
+    if (typeof val === 'object') return val;
+    try { const p = JSON.parse(val); return typeof p === 'string' ? JSON.parse(p) : p; } catch (e) { return fallback; }
+};
+const ensureArray = (val: any) => Array.isArray(val) ? val : [];
 
 export default function MarketMonitor({ onTradeNow }: { onTradeNow: (s: any) => void }) {
     const [monitorList, setMonitorList] = useState<MonitorCardItem[]>([]);
@@ -22,7 +30,8 @@ export default function MarketMonitor({ onTradeNow }: { onTradeNow: (s: any) => 
     const [dismissedSignals, setDismissedSignals] = useState<string[]>([]);
 
     const getMondayLocal = (d: Date) => {
-        const date = new Date(d); const day = date.getDay();
+        const date = new Date(d);
+        const day = date.getDay();
         const diff = date.getDate() - day + (day === 0 ? -6 : 1); date.setDate(diff);
         const offset = date.getTimezoneOffset();
         return new Date(date.getTime() - (offset * 60000)).toISOString().split('T')[0];
@@ -35,14 +44,18 @@ export default function MarketMonitor({ onTradeNow }: { onTradeNow: (s: any) => 
 
     const syncData = async () => {
         try {
-            setIsMt5Alive(true); const weekDate = getMondayLocal(new Date());
-            const outRes = await fetch(`https://mk-project19-1.onrender.com/api/outlook/current/?week_start=${weekDate}`);
+            setIsMt5Alive(true);
+            const weekDate = getMondayLocal(new Date());
+            
+            // [CHỐNG ĐÔNG CACHE] Ép tải mới
+            const outRes = await fetch(`https://mk-project19-1.onrender.com/api/outlook/current/?week_start=${weekDate}&t=${Date.now()}`);
             const map = new Map<string, MonitorCardItem>();
+
             if (outRes.ok) {
                 const outData = await outRes.json();
                 if (outData.fa_bias) {
                     try {
-                        const fa = JSON.parse(outData.fa_bias);
+                        const fa = parseDeep(outData.fa_bias, {});
                         if (Array.isArray(fa.planned)) {
                             fa.planned.forEach((s: string) => {
                                 const [symRaw, dirRaw] = s.split('|'); const cleanSym = symRaw.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
@@ -52,22 +65,36 @@ export default function MarketMonitor({ onTradeNow }: { onTradeNow: (s: any) => 
                     } catch (e) {}
                 }
             }
+
             try {
-                const sigRes = await fetch("https://mk-project19-1.onrender.com/api/mt5/radar/");
+                // [TỬ HUYỆT ĐÃ BỊ PHÁ] Thêm ?t=Date.now() đập chết bộ nhớ đệm Chrome
+                const sigRes = await fetch(`https://mk-project19-1.onrender.com/api/mt5/radar/?t=${Date.now()}`);
                 if (sigRes.ok) {
-                    const sigData = await sigRes.json(); const signals: MarketSignal[] = sigData.radar_blips || []; const now = Date.now();
+                    const sigData = await sigRes.json();
+                    const signals: MarketSignal[] = sigData.radar_blips || [];
+                    const now = Date.now();
+                    
                     signals.forEach(sig => {
+                        if (!sig || !sig.symbol) return; // KHIÊN ĐỠ RÁC ĐỜI TỐNG
                         const cleanSym = sig.symbol.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
                         if (dismissedSignals.includes(cleanSym)) return;
-                        if (map.has(cleanSym)) { const item = map.get(cleanSym)!; item.signal = sig; item.lastUpdate = now; if (sig.is_alerting) playSound(); }
+                        
+                        if (map.has(cleanSym)) {
+                            const item = map.get(cleanSym)!;
+                            item.signal = sig;
+                            item.lastUpdate = now;
+                            if (sig.is_alerting) playSound();
+                        }
                     });
                 }
-            } catch (e) {}
+            } catch (e) { console.error("Radar Error:", e); }
+
             setMonitorList(Array.from(map.values()));
         } catch (e) { setIsMt5Alive(false); }
     };
 
-    useEffect(() => { syncData(); const i = setInterval(syncData, 5000); return () => clearInterval(i); }, [soundEnabled, dismissedSignals]);
+    // Quét liên tục 3 giây 1 lần
+    useEffect(() => { syncData(); const i = setInterval(syncData, 3000); return () => clearInterval(i); }, [soundEnabled, dismissedSignals]);
 
     const handleTradeClick = (item: MonitorCardItem, activeTags: string[]) => {
         const payload = { pair: item.symbol, direction: item.bias, reason: `Radar Alert: ${activeTags.join(", ")}`, tags: activeTags };
@@ -101,8 +128,10 @@ export default function MarketMonitor({ onTradeNow }: { onTradeNow: (s: any) => 
                 )}
                 {monitorList.map(item => {
                     const hasSignal = item.signal && (Date.now() - item.lastUpdate < 300000);
-                    const activeTags = hasSignal ? (item.signal?.active_tags || []) : [];
-                    const isPlanBuy = item.bias === 'BUY'; const planColor = isPlanBuy ? '#16a34a' : '#dc2626';
+                    // Rút mảng Tag an toàn
+                    const activeTags = hasSignal ? ensureArray(parseDeep(item.signal?.active_tags, [])) : [];
+                    const isPlanBuy = item.bias === 'BUY';
+                    const planColor = isPlanBuy ? '#16a34a' : '#dc2626';
                     const isAligned = hasSignal && (item.signal?.direction === item.bias || item.signal?.direction === 'NEUTRAL');
                     const selectedTagIds = cardSettings[item.symbol] || ['FIBO_GOLD', 'ZONE_TOUCH', 'MACD_CROSS_UP', 'STOCH_OS'];
                     const isEditing = editingSymbol === item.symbol;
@@ -138,8 +167,10 @@ export default function MarketMonitor({ onTradeNow }: { onTradeNow: (s: any) => 
                             ) : (
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '15px' }}>
                                     {[0, 1, 2, 3].map(i => {
-                                        const tagId = selectedTagIds[i]; if (!tagId) return <div key={i} style={{ height: '32px', border: '1px dashed #e2e8f0', borderRadius: '6px' }} />;
-                                        const tagDef = ALL_TAGS_DEF.find(t => t.id === tagId) || { id: tagId, label: tagId, group: 'OTHER' }; const isActive = activeTags.includes(tagId);
+                                        const tagId = selectedTagIds[i];
+                                        if (!tagId) return <div key={i} style={{ height: '32px', border: '1px dashed #e2e8f0', borderRadius: '6px' }} />;
+                                        const tagDef = ALL_TAGS_DEF.find(t => t.id === tagId) || { id: tagId, label: tagId, group: 'OTHER' };
+                                        const isActive = activeTags.includes(tagId);
                                         return (
                                             <div key={i} style={{ padding: '8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', textAlign: 'center', background: isActive ? (isPlanBuy ? '#dcfce7' : '#fee2e2') : '#f8fafc', color: isActive ? (isPlanBuy ? '#166534' : '#991b1b') : '#94a3b8', border: `1px solid ${isActive ? (isPlanBuy ? '#bbf7d0' : '#fecaca') : '#e2e8f0'}`, opacity: isActive ? 1 : 0.6, transition: 'all 0.3s' }}>
                                                 {tagDef.label}
