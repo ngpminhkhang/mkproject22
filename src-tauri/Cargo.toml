@@ -1,0 +1,27 @@
+[package]
+name = "mfja"
+version = "0.0.0"
+description = "My Forex Journal App"
+authors = ["you"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2.0.0", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.32.1", features = ["bundled"] }
+rfd = "0.15"
+uuid = { version = "1", features = ["v4", "fast-rng", "macro-diagnostics"] }
+chrono = { version = "0.4", features = ["serde"] }
+# --- THÊM DÒNG NÀY ---
+base64 = "0.22"
+
+[features]
+# Mặc định dev thì dùng custom-protocol
+custom-protocol = ["tauri/custom-protocol"]
