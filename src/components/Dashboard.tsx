@@ -88,19 +88,16 @@ export default function Dashboard() {
     const fetchDashboardData = async (step: number) => {
         setIsLoading(true);
         try {
-            // Thử gọi Django. Nếu sập hoặc chặn CORS, nó sẽ quăng lỗi văng xuống Catch.
             const response = await fetch(`http://127.0.0.1:8000/api/v1/dashboard/?step=${step}`);
             if (!response.ok) throw new Error("Django Offline");
             
             const result = await response.json();
             setData(result.data);
         } catch (error) {
-            // KÍCH HOẠT TÚI KHÍ: Dùng dữ liệu cứng
             console.warn("Kích hoạt chế độ Offline/Fallback!");
             setData(FALLBACK_FRAMES[step]);
         } finally {
             setIsLoading(false);
-            // Bắn thông báo kịch bản
             if (step === 0) toast.success("Hệ thống ổn định. Đang theo dõi thị trường.", {id: 'sim'});
             if (step === 1) toast("Phát hiện hưng phấn. OCI tăng cao.", { icon: '⚠️', id: 'sim' });
             if (step === 2) toast.error("FLASH CRASH DETECTED! Kích hoạt phanh.", {id: 'sim'});
@@ -138,10 +135,11 @@ export default function Dashboard() {
     const currentAUM = data?.aum || 0;
 
     return (
-        <div className="w-full h-full overflow-y-auto bg-slate-50 text-slate-900 p-2 md:p-3 lg:p-4 font-sans antialiased flex flex-col relative pb-20">
+        // Đã tháo chốt khóa scroll (h-full overflow-y-auto), đổi thành min-h-full để trang tự giãn nở
+        <div className="w-full min-h-full bg-slate-50 text-slate-900 font-sans antialiased flex flex-col gap-3 relative pb-20">
             <Toaster position="top-right" />
             
-            <div className="bg-white rounded-xl p-2.5 mb-3 flex items-center justify-between shadow-sm border-2 border-blue-100">
+            <div className="bg-white rounded-xl p-2.5 flex items-center justify-between shadow-sm border-2 border-blue-100">
                 <div className="flex items-center flex-wrap gap-2 md:gap-3">
                     <button 
                         onClick={() => setIsPlaying(!isPlaying)} 
@@ -173,7 +171,7 @@ export default function Dashboard() {
                 </div>
             </div>
             
-            <header className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 mb-3 flex flex-col md:flex-row justify-between items-center md:items-center gap-3 transition-all">
+            <header className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 flex flex-col md:flex-row justify-between items-center md:items-center gap-3 transition-all">
                 <div className="flex items-center gap-3">
                     <Target size={28} color={CORE_NODES[selectedNodeKey].color} />
                     <div className="text-center md:text-left">
@@ -194,7 +192,7 @@ export default function Dashboard() {
                 </div>
             </header>
 
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 mb-3">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
                 <div className={`lg:col-span-2 bg-white rounded-xl shadow-sm border p-4 flex flex-col transition-all duration-500 ${currentStep >= 2 ? 'border-rose-400' : 'border-slate-200'}`}>
                     <h3 className="text-[10px] font-black text-slate-400 mb-2 tracking-widest uppercase">Institutional Equity Curve</h3>
                     <div className="h-48 md:h-64 w-full">
@@ -252,7 +250,7 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col mt-1">
                 <div className="bg-slate-50 p-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-center">
                     <span className="font-black text-xs text-slate-700 tracking-widest uppercase">Live Audit Trail</span>
                 </div>
