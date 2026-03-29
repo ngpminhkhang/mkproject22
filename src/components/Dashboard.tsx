@@ -49,7 +49,6 @@ const showcaseTrades = [
     { id: 6, date: "2020-03-09", event: "TREND RIDE", desc: "Xác nhận xu hướng Vàng (XAU/USD). Nhồi lệnh thuận trend an toàn.", status: "+$9,800", isLoss: false }
 ];
 
-// --- TÚI KHÍ AN TOÀN (OFFLINE MOCK FRAMES) ---
 const FALLBACK_FRAMES = [
     {
         performanceData: [ {day: "Mon", equity: 350000}, {day: "Tue", equity: 365000} ],
@@ -135,157 +134,166 @@ export default function Dashboard() {
     const currentAUM = data?.aum || 0;
 
     return (
-        // Đã tháo chốt khóa scroll (h-full overflow-y-auto), đổi thành min-h-full để trang tự giãn nở
-        <div className="w-full min-h-full bg-slate-50 text-slate-900 font-sans antialiased flex flex-col gap-3 relative pb-20">
-            <Toaster position="top-right" />
-            
-            <div className="bg-white rounded-xl p-2.5 flex items-center justify-between shadow-sm border-2 border-blue-100">
-                <div className="flex items-center flex-wrap gap-2 md:gap-3">
-                    <button 
-                        onClick={() => setIsPlaying(!isPlaying)} 
-                        disabled={currentStep >= 3 && !isPlaying}
-                        className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition-colors shadow-sm ${isPlaying ? 'bg-rose-500 hover:bg-rose-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50'}`}
-                    >
-                        {isPlaying ? <Square size={14}/> : <Play size={14}/>}
-                        {isPlaying ? 'PAUSE' : 'SIMULATE MAR-2020'}
-                    </button>
-                    <button onClick={resetSimulation} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 transition-colors">
-                        <RefreshCw size={16} />
-                    </button>
-                    <div className="text-slate-500 text-[10px] font-bold uppercase tracking-widest hidden md:flex items-center border-l border-slate-200 pl-3 h-full">
-                        Status: <span className={`ml-1 ${isPlaying ? 'text-rose-500 font-black animate-pulse' : 'text-blue-600 font-black'}`}>{isPlaying ? 'LIVE STRESS TEST' : 'STANDBY'}</span>
+        /* VỎ BỌC CHỐNG KẸT CUỘN: Tạo một lớp absolute ôm trọn khung hình, tự nó sinh ra thanh cuộn dọc */
+        <div className="relative w-full h-full bg-slate-50 text-slate-900 font-sans antialiased">
+            <div className="absolute inset-0 overflow-y-auto p-2 md:p-4 pb-24 space-y-3">
+                
+                <Toaster position="top-right" />
+                
+                {/* 1. THANH ĐIỀU KHIỂN PLAY/PAUSE */}
+                <div className="bg-white rounded-xl p-2.5 flex items-center justify-between shadow-sm border-2 border-blue-100">
+                    <div className="flex items-center flex-wrap gap-2 md:gap-3">
+                        <button 
+                            onClick={() => setIsPlaying(!isPlaying)} 
+                            disabled={currentStep >= 3 && !isPlaying}
+                            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition-colors shadow-sm ${isPlaying ? 'bg-rose-500 hover:bg-rose-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50'}`}
+                        >
+                            {isPlaying ? <Square size={14}/> : <Play size={14}/>}
+                            {isPlaying ? 'PAUSE' : 'SIMULATE MAR-2020'}
+                        </button>
+                        <button onClick={resetSimulation} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 transition-colors">
+                            <RefreshCw size={16} />
+                        </button>
+                        <div className="text-slate-500 text-[10px] font-bold uppercase tracking-widest hidden md:flex items-center border-l border-slate-200 pl-3 h-full">
+                            Status: <span className={`ml-1 ${isPlaying ? 'text-rose-500 font-black animate-pulse' : 'text-blue-600 font-black'}`}>{isPlaying ? 'LIVE STRESS TEST' : 'STANDBY'}</span>
+                        </div>
+                        
+                        <button 
+                            onClick={() => setIsTerminalOpen(true)}
+                            className="ml-auto md:ml-2 flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 text-slate-700 rounded-lg text-[10px] font-black tracking-widest uppercase hover:bg-slate-100 hover:text-blue-600 transition-colors shadow-sm active:scale-95">
+                            <Code2 size={14} />
+                            View Core Algorithm
+                        </button>
                     </div>
-                    
-                    <button 
-                        onClick={() => setIsTerminalOpen(true)}
-                        className="ml-auto md:ml-2 flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 text-slate-700 rounded-lg text-[10px] font-black tracking-widest uppercase hover:bg-slate-100 hover:text-blue-600 transition-colors shadow-sm active:scale-95">
-                        <Code2 size={14} />
-                        View Core Algorithm
-                    </button>
-                </div>
 
-                <div className="hidden md:flex items-center gap-1.5 ml-4">
-                    {[0, 1, 2, 3].map((step) => (
-                        <div key={step} className={`h-2 w-10 rounded-full transition-all duration-500 ${step <= currentStep ? 'bg-blue-500' : 'bg-slate-200'}`}></div>
-                    ))}
-                </div>
-            </div>
-            
-            <header className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 flex flex-col md:flex-row justify-between items-center md:items-center gap-3 transition-all">
-                <div className="flex items-center gap-3">
-                    <Target size={28} color={CORE_NODES[selectedNodeKey].color} />
-                    <div className="text-center md:text-left">
-                        <h1 className="text-lg md:text-xl font-black tracking-tight text-slate-900 uppercase">AUM Terminal</h1>
-                        <p className="text-[10px] font-bold text-slate-500 tracking-widest uppercase">Live Diagnostic Interface</p>
-                    </div>
-                </div>
-                <div className="flex w-full md:w-auto gap-2">
-                    <select 
-                        value={selectedNodeKey} 
-                        onChange={(e) => setSelectedNodeKey(e.target.value as NodeKey)}
-                        className="flex-1 md:flex-none bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-3 py-2 outline-none cursor-pointer"
-                    >
-                        {Object.keys(CORE_NODES).map(key => (
-                            <option key={key} value={key}>{CORE_NODES[key as NodeKey].name.toUpperCase()}</option>
+                    <div className="hidden md:flex items-center gap-1.5 ml-4">
+                        {[0, 1, 2, 3].map((step) => (
+                            <div key={step} className={`h-2 w-10 rounded-full transition-all duration-500 ${step <= currentStep ? 'bg-blue-500' : 'bg-slate-200'}`}></div>
                         ))}
-                    </select>
-                </div>
-            </header>
-
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
-                <div className={`lg:col-span-2 bg-white rounded-xl shadow-sm border p-4 flex flex-col transition-all duration-500 ${currentStep >= 2 ? 'border-rose-400' : 'border-slate-200'}`}>
-                    <h3 className="text-[10px] font-black text-slate-400 mb-2 tracking-widest uppercase">Institutional Equity Curve</h3>
-                    <div className="h-48 md:h-64 w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={data.performanceData} margin={{ top: 5, right: 10, left: -30, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                <XAxis dataKey="day" fontSize={10} fontWeight={800} axisLine={false} tickLine={false} />
-                                <YAxis hide domain={['auto', 'auto']} />
-                                <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px', fontWeight: 'bold' }} />
-                                <Area type="monotone" dataKey="equity" stroke={currentStep >= 2 ? "#ef4444" : "#3b82f6"} fillOpacity={0.1} fill={currentStep >= 2 ? "#ef4444" : "#3b82f6"} strokeWidth={3} />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    </div>
-                    <div className="text-center mt-2">
-                        <div className={`text-3xl md:text-4xl font-black leading-tight transition-colors ${currentStep >= 2 ? 'text-rose-600' : 'text-slate-900'}`}>${currentAUM.toLocaleString()}</div>
-                        <div className="text-[9px] md:text-[10px] font-bold text-slate-400 tracking-widest mt-1 uppercase">Current Liquidation Value</div>
                     </div>
                 </div>
-
-                <div className={`bg-white rounded-xl shadow-sm border p-4 flex flex-col transition-all duration-500 ${data.enforcementHub.systemLocks > 0 ? 'border-amber-400' : 'border-slate-200'}`}>
-                    <h3 className="text-[10px] font-black text-slate-400 mb-3 tracking-widest uppercase">Risk Enforcement</h3>
-                    <div className="flex-1 flex flex-col justify-center gap-3">
-                        <div className="bg-slate-50 border border-slate-100 border-l-4 border-l-rose-500 rounded-lg p-3 flex justify-between items-center">
-                            <span className="text-xs font-bold text-slate-700 uppercase">System Locks</span>
-                            <span className="text-sm font-black text-rose-700 bg-rose-100 px-2 py-0.5 rounded">{data.enforcementHub.systemLocks} Event</span>
-                        </div>
-                        <div className="bg-rose-50 border border-rose-100 border-l-4 border-l-rose-600 rounded-lg p-3 flex justify-between items-center">
-                            <span className="text-xs font-bold text-rose-800 uppercase">Macro Breach</span>
-                            <span className="text-sm font-black text-rose-700 bg-white/60 px-2 py-0.5 rounded">{data.enforcementHub.macroViolations} Trigger</span>
-                        </div>
-                        <div className="bg-amber-50 border border-amber-100 border-l-4 border-l-amber-500 rounded-lg p-3 flex justify-between items-center">
-                            <span className="text-xs font-bold text-amber-900 uppercase">Account Mode</span>
-                            <span className="text-xs md:text-sm font-black text-amber-600 uppercase">{data.enforcementHub.accountMode}</span>
+                
+                {/* 2. HEADER */}
+                <header className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 flex flex-col md:flex-row justify-between items-center md:items-center gap-3 transition-all">
+                    <div className="flex items-center gap-3">
+                        <Target size={28} color={CORE_NODES[selectedNodeKey].color} />
+                        <div className="text-center md:text-left">
+                            <h1 className="text-lg md:text-xl font-black tracking-tight text-slate-900 uppercase">AUM Terminal</h1>
+                            <p className="text-[10px] font-bold text-slate-500 tracking-widest uppercase">Live Diagnostic Interface</p>
                         </div>
                     </div>
-                </div>
-
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col relative overflow-hidden">
-                    <div className={`absolute top-0 right-0 w-24 h-24 rounded-full blur-2xl -mr-6 -mt-6 pointer-events-none transition-colors ${currentStep >= 1 ? 'bg-rose-100' : 'bg-blue-50'}`}></div>
-                    <h3 className="text-[10px] font-black text-blue-600 mb-3 tracking-widest uppercase relative z-10">Diagnostics Ver 1.0</h3>
-                    <div className="flex-1 flex flex-col justify-between relative z-10 gap-2">
-                        <div className="border-b border-slate-100 pb-2">
-                            <div className="text-[9px] font-bold text-slate-400 tracking-widest uppercase mb-1">Overconfidence (OCI)</div>
-                            <div className={`text-3xl font-black transition-colors ${data.diagnostics.oci > 0.8 ? 'text-rose-600' : 'text-blue-900'}`}>{data.diagnostics.oci} {data.diagnostics.oci > 0.8 && '🔥'}</div>
-                        </div>
-                        <div className="border-b border-slate-100 pb-2">
-                            <div className="text-[9px] font-bold text-slate-400 tracking-widest uppercase mb-1">Win Rate</div>
-                            <div className={`text-3xl font-black transition-colors ${currentStep >= 2 ? 'text-amber-500' : 'text-emerald-500'}`}>{data.diagnostics.winRate}%</div>
-                        </div>
-                        <div className="pt-1">
-                            <div className="text-[9px] font-bold text-slate-400 tracking-widest uppercase mb-1">State</div>
-                            <div className={`text-lg font-black transition-colors ${currentStep >= 2 ? 'text-rose-700' : 'text-slate-700'}`}>{data.diagnostics.state}</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col mt-1">
-                <div className="bg-slate-50 p-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-center">
-                    <span className="font-black text-xs text-slate-700 tracking-widest uppercase">Live Audit Trail</span>
-                </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse min-w-[600px]">
-                        <thead className="bg-white border-b border-slate-100">
-                            <tr>
-                                <th className="p-3 pl-4 text-[10px] font-black text-slate-400 tracking-widest uppercase">DATE</th>
-                                <th className="p-3 text-[10px] font-black text-slate-400 tracking-widest uppercase">EVENT</th>
-                                <th className="p-3 text-[10px] font-black text-slate-400 tracking-widest uppercase">DESCRIPTION</th>
-                                <th className="p-3 pr-4 text-[10px] font-black text-slate-400 tracking-widest uppercase text-right">PNL OUTCOME</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {showcaseTrades.map((log) => (
-                                <tr key={log.id} className="hover:bg-slate-50 transition-colors">
-                                    <td className="p-3 pl-4 text-xs font-bold text-slate-500 whitespace-nowrap">{log.date}</td>
-                                    <td className="p-3">
-                                        <span className={`text-[9px] font-black px-2 py-1 rounded tracking-wide uppercase ${log.isLoss ? 'bg-rose-100 text-rose-700' : 'bg-blue-100 text-blue-700'}`}>
-                                            {log.event}
-                                        </span>
-                                    </td>
-                                    <td className="p-3 text-xs font-medium italic text-slate-600 leading-snug">{log.desc}</td>
-                                    <td className="p-3 pr-4 text-right whitespace-nowrap">
-                                        <span className={`text-sm font-black tracking-tight ${log.isLoss ? 'text-rose-600' : 'text-emerald-600'}`}>
-                                            {log.status}
-                                        </span>
-                                    </td>
-                                </tr>
+                    <div className="flex w-full md:w-auto gap-2">
+                        <select 
+                            value={selectedNodeKey} 
+                            onChange={(e) => setSelectedNodeKey(e.target.value as NodeKey)}
+                            className="flex-1 md:flex-none bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-3 py-2 outline-none cursor-pointer"
+                        >
+                            {Object.keys(CORE_NODES).map(key => (
+                                <option key={key} value={key}>{CORE_NODES[key as NodeKey].name.toUpperCase()}</option>
                             ))}
-                        </tbody>
-                    </table>
+                        </select>
+                    </div>
+                </header>
+
+                {/* 3. KHU VỰC THÔNG SỐ */}
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
+                    <div className={`lg:col-span-2 bg-white rounded-xl shadow-sm border p-4 flex flex-col transition-all duration-500 ${currentStep >= 2 ? 'border-rose-400' : 'border-slate-200'}`}>
+                        <h3 className="text-[10px] font-black text-slate-400 mb-2 tracking-widest uppercase">Institutional Equity Curve</h3>
+                        <div className="h-48 md:h-64 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={data.performanceData} margin={{ top: 5, right: 10, left: -30, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                    <XAxis dataKey="day" fontSize={10} fontWeight={800} axisLine={false} tickLine={false} />
+                                    <YAxis hide domain={['auto', 'auto']} />
+                                    <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px', fontWeight: 'bold' }} />
+                                    <Area type="monotone" dataKey="equity" stroke={currentStep >= 2 ? "#ef4444" : "#3b82f6"} fillOpacity={0.1} fill={currentStep >= 2 ? "#ef4444" : "#3b82f6"} strokeWidth={3} />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        </div>
+                        <div className="text-center mt-2">
+                            <div className={`text-3xl md:text-4xl font-black leading-tight transition-colors ${currentStep >= 2 ? 'text-rose-600' : 'text-slate-900'}`}>${currentAUM.toLocaleString()}</div>
+                            <div className="text-[9px] md:text-[10px] font-bold text-slate-400 tracking-widest mt-1 uppercase">Current Liquidation Value</div>
+                        </div>
+                    </div>
+
+                    <div className={`bg-white rounded-xl shadow-sm border p-4 flex flex-col transition-all duration-500 ${data.enforcementHub.systemLocks > 0 ? 'border-amber-400' : 'border-slate-200'}`}>
+                        <h3 className="text-[10px] font-black text-slate-400 mb-3 tracking-widest uppercase">Risk Enforcement</h3>
+                        <div className="flex-1 flex flex-col justify-center gap-3">
+                            <div className="bg-slate-50 border border-slate-100 border-l-4 border-l-rose-500 rounded-lg p-3 flex justify-between items-center">
+                                <span className="text-xs font-bold text-slate-700 uppercase">System Locks</span>
+                                <span className="text-sm font-black text-rose-700 bg-rose-100 px-2 py-0.5 rounded">{data.enforcementHub.systemLocks} Event</span>
+                            </div>
+                            <div className="bg-rose-50 border border-rose-100 border-l-4 border-l-rose-600 rounded-lg p-3 flex justify-between items-center">
+                                <span className="text-xs font-bold text-rose-800 uppercase">Macro Breach</span>
+                                <span className="text-sm font-black text-rose-700 bg-white/60 px-2 py-0.5 rounded">{data.enforcementHub.macroViolations} Trigger</span>
+                            </div>
+                            <div className="bg-amber-50 border border-amber-100 border-l-4 border-l-amber-500 rounded-lg p-3 flex justify-between items-center">
+                                <span className="text-xs font-bold text-amber-900 uppercase">Account Mode</span>
+                                <span className="text-xs md:text-sm font-black text-amber-600 uppercase">{data.enforcementHub.accountMode}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col relative overflow-hidden">
+                        <div className={`absolute top-0 right-0 w-24 h-24 rounded-full blur-2xl -mr-6 -mt-6 pointer-events-none transition-colors ${currentStep >= 1 ? 'bg-rose-100' : 'bg-blue-50'}`}></div>
+                        <h3 className="text-[10px] font-black text-blue-600 mb-3 tracking-widest uppercase relative z-10">Diagnostics Ver 1.0</h3>
+                        <div className="flex-1 flex flex-col justify-between relative z-10 gap-2">
+                            <div className="border-b border-slate-100 pb-2">
+                                <div className="text-[9px] font-bold text-slate-400 tracking-widest uppercase mb-1">Overconfidence (OCI)</div>
+                                <div className={`text-3xl font-black transition-colors ${data.diagnostics.oci > 0.8 ? 'text-rose-600' : 'text-blue-900'}`}>{data.diagnostics.oci} {data.diagnostics.oci > 0.8 && '🔥'}</div>
+                            </div>
+                            <div className="border-b border-slate-100 pb-2">
+                                <div className="text-[9px] font-bold text-slate-400 tracking-widest uppercase mb-1">Win Rate</div>
+                                <div className={`text-3xl font-black transition-colors ${currentStep >= 2 ? 'text-amber-500' : 'text-emerald-500'}`}>{data.diagnostics.winRate}%</div>
+                            </div>
+                            <div className="pt-1">
+                                <div className="text-[9px] font-bold text-slate-400 tracking-widest uppercase mb-1">State</div>
+                                <div className={`text-lg font-black transition-colors ${currentStep >= 2 ? 'text-rose-700' : 'text-slate-700'}`}>{data.diagnostics.state}</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
+
+                {/* 4. AUDIT TRAIL */}
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                    <div className="bg-slate-50 p-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-center">
+                        <span className="font-black text-xs text-slate-700 tracking-widest uppercase">Live Audit Trail</span>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse min-w-[600px]">
+                            <thead className="bg-white border-b border-slate-100">
+                                <tr>
+                                    <th className="p-3 pl-4 text-[10px] font-black text-slate-400 tracking-widest uppercase">DATE</th>
+                                    <th className="p-3 text-[10px] font-black text-slate-400 tracking-widest uppercase">EVENT</th>
+                                    <th className="p-3 text-[10px] font-black text-slate-400 tracking-widest uppercase">DESCRIPTION</th>
+                                    <th className="p-3 pr-4 text-[10px] font-black text-slate-400 tracking-widest uppercase text-right">PNL OUTCOME</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {showcaseTrades.map((log) => (
+                                    <tr key={log.id} className="hover:bg-slate-50 transition-colors">
+                                        <td className="p-3 pl-4 text-xs font-bold text-slate-500 whitespace-nowrap">{log.date}</td>
+                                        <td className="p-3">
+                                            <span className={`text-[9px] font-black px-2 py-1 rounded tracking-wide uppercase ${log.isLoss ? 'bg-rose-100 text-rose-700' : 'bg-blue-100 text-blue-700'}`}>
+                                                {log.event}
+                                            </span>
+                                        </td>
+                                        <td className="p-3 text-xs font-medium italic text-slate-600 leading-snug">{log.desc}</td>
+                                        <td className="p-3 pr-4 text-right whitespace-nowrap">
+                                            <span className={`text-sm font-black tracking-tight ${log.isLoss ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                                {log.status}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
             </div>
 
+            {/* MODAL CODE PYTHON */}
             {isTerminalOpen && (
                 <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[100] flex items-center justify-center p-3 animate-fade-in" onClick={() => setIsTerminalOpen(false)}>
                     <div className="bg-[#1e1e1e] rounded-xl w-full max-w-3xl shadow-2xl border-t-8 border-slate-700 overflow-hidden font-mono text-xs text-[#d4d4d4] animate-slide-in-bottom flex flex-col h-[80vh]" onClick={e => e.stopPropagation()}>
