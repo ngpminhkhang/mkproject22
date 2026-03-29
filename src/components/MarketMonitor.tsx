@@ -1,227 +1,121 @@
-import { useState, useEffect } from "react";
-import { Radio, Clock, Activity, Volume2, VolumeX, ArrowRightCircle, Settings, Check, Zap } from "lucide-react";
-import { Toaster, toast } from 'react-hot-toast';
-import { motion } from "framer-motion";
+import React, { useState, useEffect } from "react";
+import { 
+  Radar, Zap, Clock, Activity, Target, Crosshair, Loader2
+} from "lucide-react";
+import toast, { Toaster } from 'react-hot-toast';
 
-interface MarketSignal { symbol: string; direction: "BUY" | "SELL" | "NEUTRAL"; active_tags: string[]; is_alerting: boolean; score: number; timestamp: number; }
-interface MonitorCardItem { symbol: string; bias: "BUY" | "SELL" | "NEUTRAL"; signal?: MarketSignal; lastUpdate: number; }
-
-const ALL_TAGS_DEF = [
-    { id: 'FIBO_GOLD', label: 'Fibo Golden (38-61)', group: 'MANUAL' }, { id: 'ZONE_TOUCH', label: 'Price In Zone', group: 'MANUAL' },
-    { id: 'STOCH_OB', label: 'Stoch > 70 (Sell)', group: 'OSCILLATOR' }, { id: 'STOCH_OS', label: 'Stoch < 30 (Buy)', group: 'OSCILLATOR' },
-    { id: 'MACD_CROSS_UP', label: 'MACD Cross Up', group: 'TREND' }, { id: 'MACD_CROSS_DOWN', label: 'MACD Cross Down', group: 'TREND' },
-    { id: 'MACD_POS', label: 'MACD > 0', group: 'TREND' }, { id: 'MACD_NEG', label: 'MACD < 0', group: 'TREND' },
+// --- MOCK DATA: Giả lập lũ EA đang bơm tín hiệu ---
+const initialSignals = [
+  { id: '1', symbol: 'EURUSD', bias: 'BUY', tags: ['ZONE_TOUCH', 'STOCH_OS'], score: 85, alerting: true },
+  { id: '2', symbol: 'GBPUSD', bias: 'NEUTRAL', tags: ['WAITING_STRUCTURE'], score: 40, alerting: false },
+  { id: '3', symbol: 'USDJPY', bias: 'SELL', tags: ['FIBO_GOLD', 'RSI_DIV'], score: 92, alerting: true },
+  { id: '4', symbol: 'XAUUSD', bias: 'BUY', tags: ['LIQUIDITY_SWEEP'], score: 75, alerting: false },
+  { id: '5', symbol: 'AUDUSD', bias: 'NEUTRAL', tags: ['CONSOLIDATION'], score: 50, alerting: false },
+  { id: '6', symbol: 'USDCAD', bias: 'SELL', tags: ['STOCH_OB'], score: 80, alerting: false },
 ];
 
-const parseDeep = (val: any, fallback: any = []): any => {
-    if (!val) return fallback;
-    if (typeof val === 'object') return val;
-    try { const p = JSON.parse(val); return typeof p === 'string' ? JSON.parse(p) : p; } catch (e) { return fallback; }
-};
-const ensureArray = (val: any) => Array.isArray(val) ? val : [];
+export default function MarketMonitor() {
+  const [signals, setSignals] = useState(initialSignals);
+  const [isScanning, setIsScanning] = useState(true);
 
-export default function MarketMonitor({ onTradeNow }: { onTradeNow: (s: any) => void }) {
-    const [monitorList, setMonitorList] = useState<MonitorCardItem[]>([]);
-    const [soundEnabled, setSoundEnabled] = useState(true);
-    const [isMt5Alive, setIsMt5Alive] = useState(false);
-    const [cardSettings, setCardSettings] = useState<{ [symbol: string]: string[] }>({});
-    const [editingSymbol, setEditingSymbol] = useState<string | null>(null);
-    const [dismissedSignals, setDismissedSignals] = useState<string[]>([]);
-    const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  // Giả lập radar quét liên tục
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Đảo lộn ngẫu nhiên 1 tí cho nó có cảm giác live
+      setSignals(prev => [...prev].map(sig => ({
+        ...sig,
+        score: sig.alerting ? Math.min(100, sig.score + Math.floor(Math.random() * 5)) : sig.score
+      })));
+    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
 
-    useEffect(() => {
-        const handleResize = () => setIsMobile(window.innerWidth < 768);
-        window.addEventListener("resize", handleResize);
-        return () => window.removeEventListener("resize", handleResize);
-    }, []);
+  const handleExecute = (symbol: string, bias: string) => {
+    toast(`Đã khóa mục tiêu ${symbol} - Đẩy sang Scenario Builder!`, { icon: '🎯', style: { fontWeight: 'bold' }});
+  };
 
-    const getMondayLocal = (d: Date) => {
-        const date = new Date(d);
-        const day = date.getDay();
-        const diff = date.getDate() - day + (day === 0 ? -6 : 1); date.setDate(diff);
-        const offset = date.getTimezoneOffset();
-        return new Date(date.getTime() - (offset * 60000)).toISOString().split('T')[0];
-    };
+  const handleScanToggle = () => {
+    setIsScanning(!isScanning);
+    if (!isScanning) toast.success("Radar Array Online!");
+    else toast("Radar Array Offline", { icon: '🛑' });
+  };
 
-    useEffect(() => { const saved = localStorage.getItem("MONITOR_CARD_SETTINGS"); if (saved) setCardSettings(JSON.parse(saved)); }, []);
-    const saveCardSetting = (symbol: string, tags: string[]) => { const newSettings = { ...cardSettings, [symbol]: tags }; setCardSettings(newSettings); localStorage.setItem("MONITOR_CARD_SETTINGS", JSON.stringify(newSettings)); };
-    
-    const playSound = () => { if (!soundEnabled) return; const audio = new Audio('/ping.mp3'); audio.volume = 0.5; audio.play().catch(() => {}); };
-    
-    const dismissSignal = (symbol: string) => { 
-        setDismissedSignals(prev => [...prev, symbol]); 
-        toast.success(`Đã MUTE cảnh báo ${symbol} trong 1 phút`, { style: { background: '#f59e0b', color: 'white', fontWeight: 'bold' }});
-        setTimeout(() => { setDismissedSignals(prev => prev.filter(s => s !== symbol)); }, 60000); 
-    };
+  return (
+    <div className="p-3 md:p-4 w-full h-full flex flex-col gap-4 overflow-y-auto bg-slate-50 pb-20">
+      <Toaster position="top-right" />
 
-    const syncData = async () => {
-        try {
-            setIsMt5Alive(true);
-            const weekDate = getMondayLocal(new Date());
-            const outRes = await fetch(`https://mk-project19-1.onrender.com/api/outlook/current/?week_start=${weekDate}&t=${Date.now()}`);
-            const map = new Map<string, MonitorCardItem>();
-            if (outRes.ok) {
-                const outData = await outRes.json();
-                if (outData.fa_bias) {
-                    try {
-                        const fa = parseDeep(outData.fa_bias, {});
-                        if (Array.isArray(fa.planned)) {
-                            fa.planned.forEach((s: string) => {
-                                const [symRaw, dirRaw] = s.split('|'); const cleanSym = symRaw.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
-                                map.set(cleanSym, { symbol: cleanSym, bias: dirRaw.toUpperCase() === 'BUY' || dirRaw.toUpperCase() === 'LONG' ? 'BUY' : 'SELL', lastUpdate: 0 });
-                            });
-                        }
-                    } catch (e) {}
-                }
-            }
-
-            try {
-                const sigRes = await fetch(`https://mk-project19-1.onrender.com/api/mt5/radar_v2/?t=${Date.now()}`);
-                if (sigRes.ok) {
-                    const sigData = await sigRes.json();
-                    const signals: MarketSignal[] = sigData.radar_blips || [];
-                    const now = Date.now();
-                    signals.forEach(sig => {
-                        if (!sig || !sig.symbol) return;
-                        const cleanSym = sig.symbol.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
-                        if (dismissedSignals.includes(cleanSym)) return;
-                        
-                        if (map.has(cleanSym)) {
-                            const item = map.get(cleanSym)!;
-                            item.signal = sig;
-                            item.lastUpdate = now;
-                            if (sig.is_alerting) playSound();
-                        }
-                    });
-                }
-            } catch (e) { console.error("Radar Error:", e); }
-
-            setMonitorList(Array.from(map.values()));
-        } catch (e) { setIsMt5Alive(false); }
-    };
-
-    useEffect(() => { syncData(); const i = setInterval(syncData, 3000); return () => clearInterval(i); }, [soundEnabled, dismissedSignals]);
-    
-    const handleTradeClick = (item: MonitorCardItem, activeTags: string[]) => {
-        const payload = { pair: item.symbol, direction: item.bias, reason: `Radar Alert: ${activeTags.join(", ")}`, tags: activeTags };
-        localStorage.setItem("MFJA_QUICK_TRADE", JSON.stringify(payload)); 
-        if (onTradeNow) onTradeNow(payload);
-    };
-
-    return (
-        <div style={{ padding: isMobile ? '16px 10px' : '10px 16px', minHeight: '100%', backgroundColor: '#f8fafc', fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <Toaster position="top-right" />
-            
-            {/* KHỐI 1: HEADER & ĐIỀU KHIỂN */}
-            <div style={{ backgroundColor: '#ffffff', borderRadius: '10px', padding: '12px 16px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', boxShadow: '0 1px 2px rgba(0,0,0,0.03)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <Radio size={18} color="#3b82f6" />
-                        <span style={{ color: '#0f172a', fontSize: '15px', fontWeight: 900, letterSpacing: '0.5px' }}>MARKET RADAR</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 10px', backgroundColor: isMt5Alive ? '#f0fdf4' : '#fef2f2', borderRadius: '99px', border: `1px solid ${isMt5Alive ? '#bbf7d0' : '#fecaca'}` }}>
-                        <Activity size={12} color={isMt5Alive ? '#16a34a' : '#dc2626'} />
-                        <span style={{ fontSize: '10px', fontWeight: 900, color: isMt5Alive ? '#166534' : '#991b1b' }}>{isMt5Alive ? "MT5 LIVE" : "DISCONNECTED"}</span>
-                    </div>
-                </div>
-                <button onClick={() => setSoundEnabled(!soundEnabled)} style={{ backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', padding: '6px 10px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    {soundEnabled ? <Volume2 size={16} color="#16a34a" /> : <VolumeX size={16} color="#94a3b8" />}
-                    {!isMobile && <span style={{ fontSize: '11px', fontWeight: 800, color: soundEnabled ? '#16a34a' : '#64748b' }}>{soundEnabled ? 'SOUND ON' : 'MUTED'}</span>}
-                </button>
+      {/* HEADER RADAR */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 flex justify-between items-center">
+        <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-full ${isScanning ? 'bg-blue-100 text-blue-600 animate-pulse' : 'bg-slate-100 text-slate-400'}`}>
+                <Radar size={24} />
             </div>
-
-            {/* KHỐI 2: LƯỚI TÍN HIỆU (RADAR GRID) */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '12px', alignContent: 'start' }}>
-                
-                {/* HIỂN THỊ KHI KHÔNG CÓ KẾ HOẠCH NÀO TRONG OUTLOOK */}
-                {monitorList.length === 0 && (
-                    <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '40px 20px', color: '#64748b', backgroundColor: '#ffffff', borderRadius: '10px', border: '1px dashed #cbd5e1', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                        <Radio size={32} color="#94a3b8" style={{ opacity: 0.5 }} />
-                        <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 900, color: '#0f172a' }}>RADAR TRỐNG</h3>
-                        <span style={{ fontSize: '12px', fontWeight: 600 }}>Chưa có mục tiêu nào được Sync từ Macro Outlook sang.</span>
-                    </div>
-                )}
-
-                {/* DANH SÁCH CÁC THẺ MỤC TIÊU */}
-                {monitorList.map(item => {
-                    const hasSignal = item.signal && (Date.now() - item.lastUpdate < 300000);
-                    const activeTags = hasSignal ? ensureArray(parseDeep(item.signal?.active_tags, [])) : [];
-                    const isPlanBuy = item.bias === 'BUY';
-                    const planColor = isPlanBuy ? '#10b981' : '#ef4444';
-                    const isAligned = hasSignal && (item.signal?.direction === item.bias || item.signal?.direction === 'NEUTRAL');
-                    const selectedTagIds = cardSettings[item.symbol] || ['FIBO_GOLD', 'ZONE_TOUCH', 'MACD_CROSS_UP', 'STOCH_OS'];
-                    const isEditing = editingSymbol === item.symbol;
-
-                    return (
-                        <motion.div layout key={item.symbol} style={{ backgroundColor: '#ffffff', borderRadius: '10px', padding: '16px', position: 'relative', border: hasSignal ? (isAligned ? `2px solid ${planColor}` : '2px solid #f59e0b') : '1px solid #e2e8f0', boxShadow: hasSignal ? `0 4px 15px ${isPlanBuy ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}` : '0 1px 2px rgba(0,0,0,0.03)' }}>
-                            
-                            {/* Card Header */}
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
-                                <div>
-                                    <div style={{ fontWeight: 900, fontSize: '20px', color: '#0f172a', letterSpacing: '-0.5px' }}>{item.symbol}</div>
-                                    <div style={{ fontSize: '10px', marginTop: '2px', fontWeight: 900, color: planColor, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                        <ArrowRightCircle size={12} style={{ transform: isPlanBuy ? 'rotate(-45deg)' : 'rotate(45deg)' }} /> OUTLOOK: {item.bias}
-                                    </div>
-                                </div>
-                                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-                                    {hasSignal && (
-                                        <button onClick={() => dismissSignal(item.symbol)} title="Tắt tiếng 1 phút" style={{ backgroundColor: '#fef2f2', border: 'none', borderRadius: '6px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                                            <VolumeX size={14} color="#dc2626" />
-                                        </button>
-                                    )}
-                                    <button onClick={() => setEditingSymbol(isEditing ? null : item.symbol)} style={{ backgroundColor: isEditing ? '#eff6ff' : '#f8fafc', border: `1px solid ${isEditing ? '#bfdbfe' : '#e2e8f0'}`, borderRadius: '6px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                                        <Settings size={14} color={isEditing ? '#2563eb' : '#64748b'} />
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Cấu hình Tag (Nhấn nút răng cưa sẽ bung ra) */}
-                            {isEditing ? (
-                                <div style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
-                                    <div style={{ fontSize: '10px', fontWeight: 900, color: '#64748b', marginBottom: '8px' }}>CHỌN 4 TAGS HIỂN THỊ:</div>
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', maxHeight: '120px', overflowY: 'auto' }}>
-                                        {ALL_TAGS_DEF.map(def => {
-                                            const isSelected = selectedTagIds.includes(def.id);
-                                            return (
-                                                <div key={def.id} onClick={() => { let newTags = [...selectedTagIds]; if (isSelected) newTags = newTags.filter(t => t !== def.id); else { if (newTags.length >= 4) newTags.shift(); newTags.push(def.id); } saveCardSetting(item.symbol, newTags); }} style={{ fontSize: '10px', fontWeight: 800, padding: '6px', cursor: 'pointer', borderRadius: '4px', backgroundColor: isSelected ? '#eff6ff' : '#ffffff', border: `1px solid ${isSelected ? '#3b82f6' : '#e2e8f0'}`, color: isSelected ? '#1d4ed8' : '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                    {isSelected && <Check size={12} />} {def.label}
-                                                </div>
-                                            )
-                                        })}
-                                    </div>
-                                    <button onClick={() => setEditingSymbol(null)} style={{ width: '100%', marginTop: '12px', padding: '8px', backgroundColor: '#3b82f6', color: '#ffffff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 900, cursor: 'pointer' }}>XONG</button>
-                                </div>
-                            ) : (
-                                /* Hiển thị 4 Tag Indicator */
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '16px' }}>
-                                    {[0, 1, 2, 3].map(i => {
-                                        const tagId = selectedTagIds[i];
-                                        if (!tagId) return <div key={i} style={{ height: '32px', border: '1px dashed #e2e8f0', borderRadius: '6px', backgroundColor: '#f8fafc' }} />;
-                                        const tagDef = ALL_TAGS_DEF.find(t => t.id === tagId) || { id: tagId, label: tagId, group: 'OTHER' };
-                                        const isActive = activeTags.includes(tagId);
-                                        return (
-                                            <div key={i} style={{ padding: '8px', borderRadius: '6px', fontSize: '10px', fontWeight: 800, textAlign: 'center', backgroundColor: isActive ? (isPlanBuy ? '#dcfce7' : '#fef2f2') : '#f8fafc', color: isActive ? (isPlanBuy ? '#166534' : '#991b1b') : '#94a3b8', border: `1px solid ${isActive ? (isPlanBuy ? '#bbf7d0' : '#fecaca') : '#e2e8f0'}`, opacity: isActive ? 1 : 0.5, transition: 'all 0.2s' }}>
-                                                {tagDef.label}
-                                            </div>
-                                        )
-                                    })}
-                                </div>
-                            )}
-
-                            {/* Nút Execute / Status */}
-                            {hasSignal ? (
-                                <button onClick={() => handleTradeClick(item, activeTags)} style={{ width: '100%', padding: '12px', backgroundColor: planColor, borderRadius: '8px', color: '#ffffff', fontWeight: 900, fontSize: '13px', border: 'none', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', transition: 'transform 0.1s' }} onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.98)'} onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}>
-                                    <Zap size={16} fill="white" /> THẨM VẤN & KHAI HỎA
-                                </button>
-                            ) : (
-                                <div style={{ textAlign: 'center', padding: '12px', backgroundColor: '#f1f5f9', borderRadius: '8px', color: '#64748b', fontWeight: 900, fontSize: '12px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', border: '1px solid #e2e8f0' }}>
-                                    <Clock size={14} /> WAITING SIGNAL...
-                                </div>
-                            )}
-                        </motion.div>
-                    );
-                })}
+            <div>
+                <h2 className="text-lg font-black tracking-tight text-slate-900 uppercase">Market Monitor</h2>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1">
+                    EA Signal Intercept <Activity size={10} className={isScanning ? "text-emerald-500 animate-pulse" : "text-slate-400"} />
+                </p>
             </div>
         </div>
-    );
+        <button 
+            onClick={handleScanToggle}
+            className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest flex items-center gap-1.5 transition-colors shadow-sm
+            ${isScanning ? 'bg-rose-100 text-rose-700 hover:bg-rose-200' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+        >
+            {isScanning ? <Clock size={14} /> : <Zap size={14} />} 
+            {isScanning ? 'HALT SCAN' : 'START SCAN'}
+        </button>
+      </div>
+
+      {/* GRID THẺ TÍN HIỆU */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {signals.map((item) => (
+          <div key={item.id} className={`bg-white rounded-xl shadow-sm border p-4 flex flex-col gap-4 transition-all duration-300
+            ${item.alerting ? (item.bias === 'BUY' ? 'border-emerald-400 shadow-emerald-100' : 'border-rose-400 shadow-rose-100') : 'border-slate-200'}`}>
+            
+            {/* Thẻ Header */}
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                    <Target size={18} className="text-slate-400" />
+                    <span className="text-lg font-black text-slate-900">{item.symbol}</span>
+                </div>
+                <div className="flex flex-col items-end">
+                    <span className={`text-[10px] font-black px-2 py-1 rounded uppercase tracking-widest
+                        ${item.bias === 'BUY' ? 'bg-emerald-100 text-emerald-700' : item.bias === 'SELL' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'}`}>
+                        {item.bias}
+                    </span>
+                    <span className="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-widest">Score: {item.score}/100</span>
+                </div>
+            </div>
+
+            {/* Thẻ Tags (Lý do vào lệnh) */}
+            <div className="flex-1">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1"><Crosshair size={10}/> Active Triggers</p>
+                <div className="flex flex-wrap gap-2">
+                    {item.tags.map(tag => (
+                        <span key={tag} className="text-[10px] font-bold bg-slate-50 border border-slate-200 text-slate-600 px-2 py-1 rounded">
+                            {tag}
+                        </span>
+                    ))}
+                </div>
+            </div>
+
+            {/* Nút Execute Bóp Cò */}
+            <button 
+                onClick={() => handleExecute(item.symbol, item.bias)}
+                disabled={!item.alerting}
+                className={`w-full py-2.5 rounded-lg text-xs font-black tracking-widest uppercase flex justify-center items-center gap-2 transition-all
+                    ${item.alerting 
+                        ? (item.bias === 'BUY' ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-md animate-pulse' : 'bg-rose-500 hover:bg-rose-600 text-white shadow-md animate-pulse') 
+                        : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}
+            >
+                {item.alerting ? <Zap size={14} fill="currentColor" /> : <Clock size={14} />}
+                {item.alerting ? `TRADE ${item.bias} NOW` : 'WAITING SIGNAL...'}
+            </button>
+
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }

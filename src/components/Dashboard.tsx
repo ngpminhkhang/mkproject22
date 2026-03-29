@@ -1,18 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { 
     RefreshCw, Zap, Shield, Activity, Target, ChevronLeft, ChevronRight, 
-    ChevronsLeft, ChevronsRight, Loader2
+    ChevronsLeft, ChevronsRight, Loader2, Play, Square, Code2, Terminal, X
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import toast, { Toaster } from 'react-hot-toast';
-
-// Định nghĩa khung xương (Interface) để TypeScript khỏi sủa bậy
-interface DashboardData {
-    performanceData: { day: string, equity: number }[];
-    enforcementHub: { systemLocks: number, macroViolations: number, accountMode: string };
-    diagnostics: { oci: number, winRate: number, state: string };
-    auditTrail: { id: number, date: string, event: string, desc: string, status: string }[];
-}
 
 const CORE_NODES = {
     BALANCED: { id: 1, name: "Balanced", color: "#3b82f6", icon: <Activity size={16} /> },
@@ -22,195 +14,256 @@ const CORE_NODES = {
 
 type NodeKey = keyof typeof CORE_NODES;
 
+const pythonCodeSnippet = `class BehavioralRiskEngine:
+    """
+    Central Risk Engine: Rút củi dưới đáy nồi.
+    Trị dứt điểm căn bệnh hưng phấn và trả thù thị trường.
+    """
+    def __init__(self, account_id):
+        self.base_risk_limit = 0.02 # Max 2% rủi ro/lệnh chuẩn
+
+    def calculate_oci(self, win_rate, avg_size, trade_freq):
+        """Tính toán Overconfidence Index (OCI)"""
+        oci = (win_rate * 1.5) * avg_size * trade_freq
+        return round(oci, 2)
+
+    def adaptive_risk_dampening(self, current_streak, win_rate, oci):
+        """Cơ chế tự động bóp nghẹt rủi ro (Self-Correcting)"""
+        allowed_risk = self.base_risk_limit
+
+        # CẤP ĐỘ 1: RÚT CỦI NHẸ (Chuỗi thắng làm mờ lý trí)
+        if current_streak >= 3 and oci > 0.6:
+            allowed_risk *= 0.8 # Giảm 20% đòn bẩy
+            return allowed_risk, "RESTRICTED: Detected Euphoria"
+
+        # CẤP ĐỘ 2: ĐẠP PHANH KHẨN CẤP (Ngáo quyền lực)
+        elif current_streak >= 5 and oci > 0.8:
+            allowed_risk *= 0.5 # Bóp nghẹt 50%
+            return allowed_risk, "HALTED: Clamped 50% size"
+            
+        return allowed_risk, "NORMAL"`;
+
+// 6 Lệnh kinh điển: 3 Lõm nặng (Vi phạm) - 3 Lãi to (Chuẩn kỷ luật)
+const showcaseTrades = [
+    { id: 1, date: "2020-03-12", event: "MACRO BREACH", desc: "Phớt lờ VIX bùng nổ. Cố chấp nhồi lệnh BUY GBP/USD ngược sóng.", status: "-$12,500", isLoss: true },
+    { id: 2, date: "2020-03-11", event: "OCI VIOLATION", desc: "Hưng phấn sau chuỗi thắng. Tăng đòn bẩy gấp 3 lần hạn mức cho phép.", status: "-$8,200", isLoss: true },
+    { id: 3, date: "2020-03-11", event: "DRAWDOWN LIMIT", desc: "Chạm ngưỡng cắt lỗ ngày 1.5%. Central Engine cưỡng chế đóng lệnh.", status: "-$5,400", isLoss: true },
+    { id: 4, date: "2020-03-10", event: "ALPHA NODE", desc: "Vào lệnh EUR/USD chuẩn mô hình thanh khoản. Risk/Reward 1:3.", status: "+$15,300", isLoss: false },
+    { id: 5, date: "2020-03-09", event: "MEAN REVERSION", desc: "Khai thác điểm cạn kiệt thanh khoản (Liquidity Sweep) trên USD/JPY.", status: "+$11,200", isLoss: false },
+    { id: 6, date: "2020-03-09", event: "TREND RIDE", desc: "Xác nhận xu hướng Vàng (XAU/USD). Nhồi lệnh thuận trend an toàn.", status: "+$9,800", isLoss: false }
+];
+
 export default function Dashboard() {
     const [selectedNodeKey, setSelectedNodeKey] = useState<NodeKey>("AGGRESSIVE");
-    const [currentPage, setCurrentPage] = useState(1);
-    const itemsPerPage = 8;
-    const [showModal, setShowModal] = useState<string | null>(null);
-
-    // STATE HÚT MÁU TỪ API
-    const [data, setData] = useState<DashboardData | null>(null);
+    const [data, setData] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [currentStep, setCurrentStep] = useState(0);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [isTerminalOpen, setIsTerminalOpen] = useState(false);
 
-    // HÀM KÍCH HOẠT ĐỘNG CƠ (FETCH API)
-    const fetchDashboardData = async () => {
-        setIsLoading(true);
+    const fetchDashboardData = async (step: number) => {
         try {
-            // Đổi port 8000 nếu Django của sếp chạy port khác
-            const response = await fetch('http://127.0.0.1:8000/api/v1/dashboard/');
-            if (!response.ok) throw new Error("Mất kết nối với lõi Django!");
+            const response = await fetch(`http://127.0.0.1:8000/api/v1/dashboard/?step=${step}`);
+            if (!response.ok) throw new Error("Mất kết nối với Django!");
             
             const result = await response.json();
             setData(result.data);
-            toast.success("Đã đồng bộ dữ liệu Alpha Matrix", { icon: '🔥', style: { fontSize: '12px', fontWeight: 'bold' }});
+            
+            if (step === 0) toast.success("Hệ thống ổn định. Đang theo dõi thị trường.", {id: 'sim'});
+            if (step === 1) toast("Phát hiện hưng phấn. OCI tăng cao.", { icon: '⚠️', id: 'sim' });
+            if (step === 2) toast.error("FLASH CRASH DETECTED! Kích hoạt phanh.", {id: 'sim'});
+            if (step === 3) toast("Đã đóng băng danh mục. Bảo toàn vốn.", { icon: '🛡️', id: 'sim' });
+
         } catch (error) {
-            console.error("Lỗi API:", error);
-            toast.error("Radar nhiễu! Vui lòng kiểm tra kết nối Backend.");
+            console.error(error);
+            toast.error("Radar nhiễu! Vui lòng bật Server Django.");
         } finally {
             setIsLoading(false);
         }
     };
 
-    // Tự động hút dữ liệu khi sếp mở trang
     useEffect(() => {
-        fetchDashboardData();
-    }, []);
+        fetchDashboardData(currentStep);
+    }, [currentStep]);
 
-    // GIAO DIỆN CHỜ (LOADING STATE) - Khè hội đồng lúc đang tải
-    if (isLoading || !data) {
-        return (
-            <div className="w-full h-full min-h-[500px] flex flex-col items-center justify-center bg-slate-50">
-                <Loader2 className="animate-spin text-blue-600 mb-4" size={48} />
-                <h2 className="text-xl font-black tracking-widest text-slate-800 uppercase">Establishing Handshake...</h2>
-                <p className="text-xs text-slate-500 font-bold tracking-widest mt-2 uppercase">Syncing MQL5 Alpha Nodes</p>
-            </div>
-        );
-    }
+    useEffect(() => {
+        let interval: any;
+        if (isPlaying) {
+            interval = setInterval(() => {
+                setCurrentStep((prev) => {
+                    if (prev >= 3) {
+                        setIsPlaying(false);
+                        return 3;
+                    }
+                    return prev + 1;
+                });
+            }, 3500); 
+        }
+        return () => clearInterval(interval);
+    }, [isPlaying]);
 
-    // TÍNH TOÁN DỮ LIỆU SAU KHI HÚT XONG
-    const totalPages = Math.ceil(data.auditTrail.length / itemsPerPage);
-    const currentLogs = data.auditTrail.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-    const currentAUM = data.performanceData[data.performanceData.length - 1]?.equity || 0;
+    const resetSimulation = () => {
+        setIsPlaying(false);
+        setCurrentStep(0);
+    };
+
+    if (isLoading && !data) return <div className="flex justify-center items-center h-screen"><Loader2 className="animate-spin text-blue-600" size={32} /></div>;
+
+    const currentAUM = data?.aum || 0;
 
     return (
-        <div className="w-full h-full bg-slate-50 text-slate-900 p-0 md:p-1 lg:p-2 font-sans overflow-x-hidden antialiased flex flex-col">
+        // Đã gắn overflow-y-auto và h-full để ép trang có thể cuộn mượt mà
+        <div className="w-full h-full overflow-y-auto bg-slate-50 text-slate-900 p-2 md:p-3 lg:p-4 font-sans antialiased flex flex-col relative pb-20">
             <Toaster position="top-right" />
             
+            {/* --- BỘ ĐIỀU KHIỂN RẠP CHIẾU PHIM --- */}
+            <div className="bg-white rounded-xl p-2.5 mb-3 flex items-center justify-between shadow-sm border-2 border-blue-100">
+                <div className="flex items-center flex-wrap gap-2 md:gap-3">
+                    <button 
+                        onClick={() => setIsPlaying(!isPlaying)} 
+                        disabled={currentStep >= 3 && !isPlaying}
+                        className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-black tracking-widest uppercase transition-colors shadow-sm ${isPlaying ? 'bg-rose-500 hover:bg-rose-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50'}`}
+                    >
+                        {isPlaying ? <Square size={14}/> : <Play size={14}/>}
+                        {isPlaying ? 'PAUSE' : 'SIMULATE MAR-2020'}
+                    </button>
+                    <button onClick={resetSimulation} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 transition-colors">
+                        <RefreshCw size={16} />
+                    </button>
+                    <div className="text-slate-500 text-[10px] font-bold uppercase tracking-widest hidden md:flex items-center border-l border-slate-200 pl-3 h-full">
+                        Status: <span className={`ml-1 ${isPlaying ? 'text-rose-500 font-black animate-pulse' : 'text-blue-600 font-black'}`}>{isPlaying ? 'LIVE STRESS TEST' : 'STANDBY'}</span>
+                    </div>
+                    
+                    {/* NÚT VIEW CORE ALGORITHM SÁNG SỦA, NẰM CHUNG HÀNG */}
+                    <button 
+                        onClick={() => setIsTerminalOpen(true)}
+                        className="ml-auto md:ml-2 flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 text-slate-700 rounded-lg text-[10px] font-black tracking-widest uppercase hover:bg-slate-100 hover:text-blue-600 transition-colors shadow-sm active:scale-95">
+                        <Code2 size={14} />
+                        View Core Algorithm
+                    </button>
+                </div>
+
+                {/* Thanh tiến trình */}
+                <div className="hidden md:flex items-center gap-1.5 ml-4">
+                    {[0, 1, 2, 3].map((step) => (
+                        <div key={step} className={`h-2 w-10 rounded-full transition-all duration-500 ${step <= currentStep ? 'bg-blue-500' : 'bg-slate-200'}`}></div>
+                    ))}
+                </div>
+            </div>
+            
             {/* 1. HEADER */}
-            <header className="bg-white rounded-lg shadow-sm border border-slate-200 p-1.5 md:p-2 mb-1.5 md:mb-2.5 flex flex-col md:flex-row justify-between items-center md:items-center gap-1.5 transition-all">
-                <div className="flex items-center gap-2">
-                    <Target size={22} color={CORE_NODES[selectedNodeKey].color} className="md:size-[26px]"/>
+            <header className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 mb-3 flex flex-col md:flex-row justify-between items-center md:items-center gap-3 transition-all">
+                <div className="flex items-center gap-3">
+                    <Target size={28} color={CORE_NODES[selectedNodeKey].color} />
                     <div className="text-center md:text-left">
-                        <h1 className="text-base md:text-lg font-black tracking-tight text-slate-900 uppercase">AUM Terminal Ver 1.0</h1>
-                        <p className="text-[9px] md:text-[10px] font-bold text-slate-500 tracking-widest uppercase -mt-1">Live Diagnostic Interface</p>
+                        <h1 className="text-lg md:text-xl font-black tracking-tight text-slate-900 uppercase">AUM Terminal</h1>
+                        <p className="text-[10px] font-bold text-slate-500 tracking-widest uppercase">Live Diagnostic Interface</p>
                     </div>
                 </div>
-                
-                <div className="flex w-full md:w-auto gap-1.5">
+                <div className="flex w-full md:w-auto gap-2">
                     <select 
                         value={selectedNodeKey} 
                         onChange={(e) => setSelectedNodeKey(e.target.value as NodeKey)}
-                        className="flex-1 md:flex-none bg-slate-50 border border-slate-200 text-slate-800 text-[10px] md:text-xs font-bold rounded-lg px-2 py-1 md:px-3 md:py-1 outline-none cursor-pointer"
+                        className="flex-1 md:flex-none bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-3 py-2 outline-none cursor-pointer"
                     >
                         {Object.keys(CORE_NODES).map(key => (
                             <option key={key} value={key}>{CORE_NODES[key as NodeKey].name.toUpperCase()}</option>
                         ))}
                     </select>
-                    <button onClick={fetchDashboardData} className="bg-slate-100 hover:bg-slate-200 p-1 rounded-lg transition-colors active:scale-95 group">
-                        <RefreshCw size={14} className="text-slate-600 md:size-[18px] group-active:animate-spin"/>
-                    </button>
                 </div>
             </header>
 
-            {/* 2. STRATEGY BAR */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-1.5 mb-1.5 md:mb-2.5">
-                {Object.entries(CORE_NODES).map(([key, node]) => (
-                    <div 
-                        key={key} 
-                        onClick={() => setSelectedNodeKey(key as NodeKey)} 
-                        className={`bg-white rounded-lg border border-slate-200 p-2 md:p-2.5 flex items-center gap-2 md:gap-3.5 cursor-pointer transition-all ${selectedNodeKey === key ? 'shadow-sm border-slate-300' : 'opacity-60 hover:opacity-100 hover:border-slate-300'}`}
-                        style={{ borderLeftWidth: '5px', borderLeftColor: node.color }}
-                    >
-                        <div style={{ color: node.color }}>{node.icon}</div>
-                        <span className="text-[11px] md:text-xs font-black text-slate-800 tracking-tight">{node.name} Growth Alpha</span>
-                    </div>
-                ))}
-            </div>
-
-            {/* 3. MAIN GRID */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-1.5 mb-1.5 md:mb-2.5">
-                
-                {/* 3.1 Equity Curve */}
-                <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-2.5 md:p-3 flex flex-col">
-                    <h3 className="text-[9px] font-black text-slate-400 mb-1 tracking-widest uppercase">Institutional Equity Curve</h3>
-                    <div className="h-44 md:h-60 w-full">
+            {/* 2. MAIN GRID TRÊN (CHART & RISK) */}
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 mb-3">
+                {/* Chart chiếm 2 cột */}
+                <div className={`lg:col-span-2 bg-white rounded-xl shadow-sm border p-4 flex flex-col transition-all duration-500 ${currentStep >= 2 ? 'border-rose-400' : 'border-slate-200'}`}>
+                    <h3 className="text-[10px] font-black text-slate-400 mb-2 tracking-widest uppercase">Institutional Equity Curve</h3>
+                    <div className="h-48 md:h-64 w-full">
                         <ResponsiveContainer width="100%" height="100%">
                             <AreaChart data={data.performanceData} margin={{ top: 5, right: 10, left: -30, bottom: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                <XAxis dataKey="day" fontSize={9} fontWeight={800} axisLine={false} tickLine={false} />
+                                <XAxis dataKey="day" fontSize={10} fontWeight={800} axisLine={false} tickLine={false} />
                                 <YAxis hide domain={['auto', 'auto']} />
-                                <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '10px', padding: '6px' }} />
-                                <Area type="monotone" dataKey="equity" stroke="#3b82f6" fillOpacity={0.1} fill="#3b82f6" strokeWidth={3} />
+                                <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px', fontWeight: 'bold' }} />
+                                <Area type="monotone" dataKey="equity" stroke={currentStep >= 2 ? "#ef4444" : "#3b82f6"} fillOpacity={0.1} fill={currentStep >= 2 ? "#ef4444" : "#3b82f6"} strokeWidth={3} />
                             </AreaChart>
                         </ResponsiveContainer>
                     </div>
-                    <div className="text-center mt-1 md:mt-1.5">
-                        <div className="text-2xl md:text-3xl font-black text-slate-900 leading-tight">${currentAUM.toLocaleString()}</div>
-                        <div className="text-[8px] md:text-[9px] font-bold text-slate-400 tracking-widest mt-0.5 uppercase tracking-tighter">Current Liquidation Value (AUM)</div>
+                    <div className="text-center mt-2">
+                        <div className={`text-3xl md:text-4xl font-black leading-tight transition-colors ${currentStep >= 2 ? 'text-rose-600' : 'text-slate-900'}`}>${currentAUM.toLocaleString()}</div>
+                        <div className="text-[9px] md:text-[10px] font-bold text-slate-400 tracking-widest mt-1 uppercase">Current Liquidation Value</div>
                     </div>
                 </div>
 
-                {/* 3.2 Enforcement Hub */}
-                <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-2.5 md:p-3 flex flex-col">
-                    <h3 className="text-[9px] font-black text-slate-400 mb-1.5 md:mb-3 tracking-widest uppercase">Risk Enforcement Hub</h3>
-                    <div className="flex-1 flex flex-col justify-center gap-2 md:gap-3">
-                        <div onClick={() => setShowModal('LOCKS')} className="bg-slate-50 border border-slate-100 border-l-4 border-l-rose-500 rounded p-2 md:p-2.5 flex justify-between items-center cursor-pointer hover:bg-slate-100 transition-colors active:scale-95">
-                            <span className="text-[10px] md:text-xs font-bold text-slate-700 uppercase">System Locks</span>
-                            <span className="text-sm font-black text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded tracking-tighter">{data.enforcementHub.systemLocks} Event</span>
+                {/* Enforcement Hub */}
+                <div className={`bg-white rounded-xl shadow-sm border p-4 flex flex-col transition-all duration-500 ${data.enforcementHub.systemLocks > 0 ? 'border-amber-400' : 'border-slate-200'}`}>
+                    <h3 className="text-[10px] font-black text-slate-400 mb-3 tracking-widest uppercase">Risk Enforcement</h3>
+                    <div className="flex-1 flex flex-col justify-center gap-3">
+                        <div className="bg-slate-50 border border-slate-100 border-l-4 border-l-rose-500 rounded-lg p-3 flex justify-between items-center">
+                            <span className="text-xs font-bold text-slate-700 uppercase">System Locks</span>
+                            <span className="text-sm font-black text-rose-700 bg-rose-100 px-2 py-0.5 rounded">{data.enforcementHub.systemLocks} Event</span>
                         </div>
-                        <div onClick={() => setShowModal('MACRO_A')} className="bg-rose-50 border border-rose-100 border-l-4 border-l-rose-600 rounded p-2 md:p-2.5 flex justify-between items-center cursor-pointer hover:bg-rose-100 transition-colors active:scale-95">
-                            <span className="text-[10px] md:text-xs font-bold text-rose-800 uppercase leading-tight">Macro Breach</span>
-                            <span className="text-sm font-black text-rose-700 bg-white/60 px-1.5 py-0.5 rounded tracking-tighter">{data.enforcementHub.macroViolations} Trigger</span>
+                        <div className="bg-rose-50 border border-rose-100 border-l-4 border-l-rose-600 rounded-lg p-3 flex justify-between items-center">
+                            <span className="text-xs font-bold text-rose-800 uppercase">Macro Breach</span>
+                            <span className="text-sm font-black text-rose-700 bg-white/60 px-2 py-0.5 rounded">{data.enforcementHub.macroViolations} Trigger</span>
                         </div>
-                        <div className="bg-amber-50 border border-amber-100 border-l-4 border-l-amber-500 rounded p-2 md:p-2.5 flex justify-between items-center">
-                            <span className="text-[10px] md:text-xs font-bold text-amber-900 uppercase">Account Mode</span>
-                            <span className="text-[11px] md:text-sm font-black text-amber-600 uppercase tracking-tight">{data.enforcementHub.accountMode}</span>
+                        <div className="bg-amber-50 border border-amber-100 border-l-4 border-l-amber-500 rounded-lg p-3 flex justify-between items-center">
+                            <span className="text-xs font-bold text-amber-900 uppercase">Account Mode</span>
+                            <span className="text-xs md:text-sm font-black text-amber-600 uppercase">{data.enforcementHub.accountMode}</span>
                         </div>
                     </div>
                 </div>
 
-                {/* 3.3 Behavioral Diagnostics */}
-                <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-2.5 md:p-3 flex flex-col relative overflow-hidden h-auto">
-                    <div className="absolute top-0 right-0 w-20 h-20 bg-blue-50 rounded-full blur-2xl -mr-5 -mt-5 pointer-events-none"></div>
-                    <h3 className="text-[9px] font-black text-blue-600 mb-2 md:mb-4 tracking-widest uppercase relative z-10">Diagnostics Ver 1.0</h3>
-                    <div className="flex-1 flex flex-col justify-between relative z-10 gap-1.5 md:gap-3 pt-1">
-                        <div onClick={() => setShowModal('OCI')} className="border-b border-slate-100 pb-1 md:pb-1.5 cursor-pointer hover:opacity-80 transition-opacity active:scale-95">
-                            <div className="text-[8px] md:text-[9px] font-bold text-slate-400 tracking-widest uppercase mb-0.5 tracking-tighter">Overconfidence (OCI)</div>
-                            <div className="text-2xl font-black text-blue-900 leading-tight">{data.diagnostics.oci} - HOT 🔥</div>
+                {/* Diagnostics */}
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col relative overflow-hidden">
+                    <div className={`absolute top-0 right-0 w-24 h-24 rounded-full blur-2xl -mr-6 -mt-6 pointer-events-none transition-colors ${currentStep >= 1 ? 'bg-rose-100' : 'bg-blue-50'}`}></div>
+                    <h3 className="text-[10px] font-black text-blue-600 mb-3 tracking-widest uppercase relative z-10">Diagnostics Ver 1.0</h3>
+                    <div className="flex-1 flex flex-col justify-between relative z-10 gap-2">
+                        <div className="border-b border-slate-100 pb-2">
+                            <div className="text-[9px] font-bold text-slate-400 tracking-widest uppercase mb-1">Overconfidence (OCI)</div>
+                            <div className={`text-3xl font-black transition-colors ${data.diagnostics.oci > 0.8 ? 'text-rose-600' : 'text-blue-900'}`}>{data.diagnostics.oci} {data.diagnostics.oci > 0.8 && '🔥'}</div>
                         </div>
-                        <div className="border-b border-slate-100 pb-1 md:pb-1.5">
-                            <div className="text-[8px] md:text-[9px] font-bold text-slate-400 tracking-widest uppercase mb-0.5 tracking-tighter">Win Rate</div>
-                            <div className="text-2xl font-black text-emerald-500 leading-tight">{data.diagnostics.winRate}%</div>
+                        <div className="border-b border-slate-100 pb-2">
+                            <div className="text-[9px] font-bold text-slate-400 tracking-widest uppercase mb-1">Win Rate</div>
+                            <div className={`text-3xl font-black transition-colors ${currentStep >= 2 ? 'text-amber-500' : 'text-emerald-500'}`}>{data.diagnostics.winRate}%</div>
                         </div>
-                        <div className="pt-0.5">
-                            <div className="text-[8px] md:text-[9px] font-bold text-slate-400 tracking-widest uppercase mb-0.5 tracking-tighter">State</div>
-                            <div className="text-base md:text-lg font-black text-rose-500 leading-snug tracking-tight">{data.diagnostics.state}</div>
+                        <div className="pt-1">
+                            <div className="text-[9px] font-bold text-slate-400 tracking-widest uppercase mb-1">State</div>
+                            <div className={`text-lg font-black transition-colors ${currentStep >= 2 ? 'text-rose-700' : 'text-slate-700'}`}>{data.diagnostics.state}</div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* 4. EXECUTION LOGS */}
-            <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-                <div className="bg-slate-50 p-2 md:p-2.5 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-1.5 md:gap-3 transition-all">
-                    <span className="font-black text-[9px] text-slate-500 tracking-widest uppercase">Live Audit Trail</span>
-                    <div className="flex gap-1 items-center">
-                        <button disabled={currentPage === 1} onClick={() => setCurrentPage(1)} className="bg-white border border-slate-200 p-1 md:p-1.5 rounded text-slate-500 disabled:opacity-50"><ChevronsLeft size={12} className="md:size-[14px]" /></button>
-                        <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="bg-white border border-slate-200 p-1 md:p-1.5 rounded text-slate-500 disabled:opacity-50"><ChevronLeft size={12} className="md:size-[14px]"/></button>
-                        <span className="text-[9px] font-black text-slate-600 px-1 md:px-2 tracking-widest"> {currentPage} / {totalPages || 1}</span>
-                        <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="bg-white border border-slate-200 p-1 md:p-1.5 rounded text-slate-500 disabled:opacity-50"><ChevronRight size={12} className="md:size-[14px]"/></button>
-                        <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(totalPages)} className="bg-white border border-slate-200 p-1 md:p-1.5 rounded text-slate-500 disabled:opacity-50"><ChevronsRight size={12} className="md:size-[14px]" /></button>
-                    </div>
+            {/* 4. EXECUTION LOGS (6 LỆNH CHUẨN MỰC) */}
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                <div className="bg-slate-50 p-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-center">
+                    <span className="font-black text-xs text-slate-700 tracking-widest uppercase">Live Audit Trail</span>
                 </div>
-                
                 <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse min-w-[500px]">
+                    <table className="w-full text-left border-collapse min-w-[600px]">
                         <thead className="bg-white border-b border-slate-100">
                             <tr>
-                                <th className="px-2 py-1.5 text-[8px] font-black text-slate-400 tracking-widest uppercase">DATE</th>
-                                <th className="px-2 py-1.5 text-[8px] font-black text-slate-400 tracking-widest uppercase">EVENT</th>
-                                <th className="px-2 py-1.5 text-[8px] font-black text-slate-400 tracking-widest uppercase">DESCRIPTION</th>
-                                <th className="px-2 py-1.5 text-[8px] font-black text-slate-400 tracking-widest uppercase text-right">OUTCOME</th>
+                                <th className="p-3 pl-4 text-[10px] font-black text-slate-400 tracking-widest uppercase">DATE</th>
+                                <th className="p-3 text-[10px] font-black text-slate-400 tracking-widest uppercase">EVENT</th>
+                                <th className="p-3 text-[10px] font-black text-slate-400 tracking-widest uppercase">DESCRIPTION</th>
+                                <th className="p-3 pr-4 text-[10px] font-black text-slate-400 tracking-widest uppercase text-right">PNL OUTCOME</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {currentLogs.map((log) => (
+                            {showcaseTrades.map((log) => (
                                 <tr key={log.id} className="hover:bg-slate-50 transition-colors">
-                                    <td className="px-2 py-1 md:py-1.5 text-[10px] md:text-xs font-bold text-slate-500 whitespace-nowrap leading-tight">{log.date}</td>
-                                    <td className="px-2 py-1 md:py-1.5"><span className="text-[8px] font-black text-rose-600 bg-rose-100 px-1.5 py-0.5 rounded tracking-wide uppercase">{log.event}</span></td>
-                                    <td className="px-2 py-1 md:py-1.5 text-[10px] md:text-xs font-medium italic text-slate-600 leading-snug">{log.desc}</td>
-                                    <td className="px-2 py-1 md:py-1.5 text-right whitespace-nowrap">
-                                        <span className="px-1.5 py-0.5 rounded bg-rose-100 text-[8px] font-black text-rose-800 tracking-widest uppercase">{log.status}</span>
+                                    <td className="p-3 pl-4 text-xs font-bold text-slate-500 whitespace-nowrap">{log.date}</td>
+                                    <td className="p-3">
+                                        <span className={`text-[9px] font-black px-2 py-1 rounded tracking-wide uppercase ${log.isLoss ? 'bg-rose-100 text-rose-700' : 'bg-blue-100 text-blue-700'}`}>
+                                            {log.event}
+                                        </span>
+                                    </td>
+                                    <td className="p-3 text-xs font-medium italic text-slate-600 leading-snug">{log.desc}</td>
+                                    <td className="p-3 pr-4 text-right whitespace-nowrap">
+                                        <span className={`text-sm font-black tracking-tight ${log.isLoss ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                            {log.status}
+                                        </span>
                                     </td>
                                 </tr>
                             ))}
@@ -219,21 +272,35 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            {/* MODAL */}
-            {showModal && (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in" onClick={() => setShowModal(null)}>
-                    <div className="bg-white rounded-xl w-full max-w-sm shadow-2xl border-t-8 border-rose-500 overflow-hidden" onClick={e => e.stopPropagation()}>
-                        <div className="p-4 flex flex-col gap-4">
-                            <div className="flex justify-between items-center gap-2 border-b border-slate-100 pb-3">
-                                <h2 className="text-base font-black text-slate-900 tracking-tight uppercase">Diagnostic Detail</h2>
-                                <button onClick={() => setShowModal(null)} className="text-slate-400 hover:text-slate-900 text-lg font-black transition-colors active:scale-95">✕</button>
+            {/* --- TERMINAL MODAL --- */}
+            {isTerminalOpen && (
+                <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[100] flex items-center justify-center p-3 animate-fade-in" onClick={() => setIsTerminalOpen(false)}>
+                    <div className="bg-[#1e1e1e] rounded-xl w-full max-w-3xl shadow-2xl border-t-8 border-slate-700 overflow-hidden font-mono text-xs text-[#d4d4d4] animate-slide-in-bottom flex flex-col h-[80vh]" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center p-3 bg-[#252526] border-b border-[#333333]">
+                            <div className="flex items-center gap-2">
+                                <Terminal size={16} className="text-slate-500" />
+                                <span className="text-slate-300 font-bold tracking-wider">finance_dashboard / risk_engine.py</span>
                             </div>
-                            <div className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-100 italic space-y-1.5">
-                                {showModal === 'OCI' && <p><strong className="text-slate-950">Overconfidence (OCI):</strong> Mức độ tách biệt tâm lý giữa chuỗi thắng và quản trị rủi ro.</p>}
-                                {showModal === 'MACRO_A' && <p><strong className="text-slate-950">Macro Breach:</strong> Vi phạm bộ lọc correlation spreads.</p>}
-                                {showModal === 'LOCKS' && <p><strong className="text-slate-950">System Locks:</strong> Tổng số lần Central Risk Engine tự động can thiệp.</p>}
-                            </div>
-                            <button onClick={() => setShowModal(null)} className="w-full mt-1.5 py-2.5 bg-slate-900 hover:bg-slate-950 text-white text-[10px] font-black tracking-widest uppercase rounded-lg transition-colors shadow-sm active:scale-98">Acknowledge</button>
+                            <button onClick={() => setIsTerminalOpen(false)} className="text-slate-500 hover:text-white active:scale-95 transition-all">
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <div className="p-6 flex-1 overflow-y-auto space-y-6">
+                            <p className="text-emerald-400 bg-emerald-950/50 p-4 rounded-lg border border-emerald-900 font-bold italic text-sm leading-relaxed">
+                                "Trade cá nhân từng giết chết tài khoản của tôi vì sự hưng phấn sau chuỗi thắng (Winning Euphoria). Tôi nhận ra con người không thể thắng nổi lòng tham khi OCI bùng nổ. Đoạn code này là xiềng xích tôi tự đeo vào chân mình: Nó tự động giảm khối lượng vị thế 50% khi 'cảm xúc' chạm ngưỡng đỏ. Tôi dùng toán học để tước đoạt quyền năng của cảm xúc."
+                            </p>
+                            
+                            <pre className="text-sm leading-loose whitespace-pre-wrap md:whitespace-pre">
+                                <code className="text-[#ce9178]">
+                                    {pythonCodeSnippet}
+                                </code>
+                            </pre>
+                        </div>
+
+                        <div className="p-2 bg-[#007acc] text-white flex justify-between items-center px-6 text-[10px] font-black tracking-widest uppercase">
+                            <span>MK QUANT CORE v1.0 // MODE: PROTECT</span>
+                            <span>Ln 1, Col 1</span>
                         </div>
                     </div>
                 </div>
