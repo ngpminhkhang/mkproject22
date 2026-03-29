@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { 
-    RefreshCw, Zap, Shield, Activity, Target, ChevronLeft, ChevronRight, 
-    ChevronsLeft, ChevronsRight, Loader2, Play, Square, Code2, Terminal, X
+    RefreshCw, Zap, Shield, Activity, Target, Loader2, Play, Square, Code2, Terminal, X
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import toast, { Toaster } from 'react-hot-toast';
@@ -31,19 +30,16 @@ const pythonCodeSnippet = `class BehavioralRiskEngine:
         """Cơ chế tự động bóp nghẹt rủi ro (Self-Correcting)"""
         allowed_risk = self.base_risk_limit
 
-        # CẤP ĐỘ 1: RÚT CỦI NHẸ (Chuỗi thắng làm mờ lý trí)
         if current_streak >= 3 and oci > 0.6:
-            allowed_risk *= 0.8 # Giảm 20% đòn bẩy
+            allowed_risk *= 0.8 
             return allowed_risk, "RESTRICTED: Detected Euphoria"
 
-        # CẤP ĐỘ 2: ĐẠP PHANH KHẨN CẤP (Ngáo quyền lực)
         elif current_streak >= 5 and oci > 0.8:
-            allowed_risk *= 0.5 # Bóp nghẹt 50%
+            allowed_risk *= 0.5 
             return allowed_risk, "HALTED: Clamped 50% size"
             
         return allowed_risk, "NORMAL"`;
 
-// 6 Lệnh kinh điển: 3 Lõm nặng (Vi phạm) - 3 Lãi to (Chuẩn kỷ luật)
 const showcaseTrades = [
     { id: 1, date: "2020-03-12", event: "MACRO BREACH", desc: "Phớt lờ VIX bùng nổ. Cố chấp nhồi lệnh BUY GBP/USD ngược sóng.", status: "-$12,500", isLoss: true },
     { id: 2, date: "2020-03-11", event: "OCI VIOLATION", desc: "Hưng phấn sau chuỗi thắng. Tăng đòn bẩy gấp 3 lần hạn mức cho phép.", status: "-$8,200", isLoss: true },
@@ -51,6 +47,34 @@ const showcaseTrades = [
     { id: 4, date: "2020-03-10", event: "ALPHA NODE", desc: "Vào lệnh EUR/USD chuẩn mô hình thanh khoản. Risk/Reward 1:3.", status: "+$15,300", isLoss: false },
     { id: 5, date: "2020-03-09", event: "MEAN REVERSION", desc: "Khai thác điểm cạn kiệt thanh khoản (Liquidity Sweep) trên USD/JPY.", status: "+$11,200", isLoss: false },
     { id: 6, date: "2020-03-09", event: "TREND RIDE", desc: "Xác nhận xu hướng Vàng (XAU/USD). Nhồi lệnh thuận trend an toàn.", status: "+$9,800", isLoss: false }
+];
+
+// --- TÚI KHÍ AN TOÀN (OFFLINE MOCK FRAMES) ---
+const FALLBACK_FRAMES = [
+    {
+        performanceData: [ {day: "Mon", equity: 350000}, {day: "Tue", equity: 365000} ],
+        enforcementHub: {systemLocks: 0, macroViolations: 0, accountMode: "NORMAL"},
+        diagnostics: {oci: 0.45, winRate: 72, state: "STABLE"},
+        aum: 365000
+    },
+    {
+        performanceData: [ {day: "Mon", equity: 350000}, {day: "Tue", equity: 365000}, {day: "Wed", equity: 395000} ],
+        enforcementHub: {systemLocks: 1, macroViolations: 0, accountMode: "WATCHLIST"},
+        diagnostics: {oci: 0.88, winRate: 85, state: "EUPHORIC - HOT"},
+        aum: 395000
+    },
+    {
+        performanceData: [ {day: "Mon", equity: 350000}, {day: "Tue", equity: 365000}, {day: "Wed", equity: 395000}, {day: "Thu", equity: 372000} ],
+        enforcementHub: {systemLocks: 12, macroViolations: 2, accountMode: "REDUCED_SIZE"},
+        diagnostics: {oci: 0.95, winRate: 68, state: "CLAMPED"},
+        aum: 372000
+    },
+    {
+        performanceData: [ {day: "Mon", equity: 350000}, {day: "Tue", equity: 365000}, {day: "Wed", equity: 395000}, {day: "Thu", equity: 372000}, {day: "Fri", equity: 371500} ],
+        enforcementHub: {systemLocks: 28, macroViolations: 5, accountMode: "HALTED"},
+        diagnostics: {oci: 0.30, winRate: 65, state: "LOCKED"},
+        aum: 371500
+    }
 ];
 
 export default function Dashboard() {
@@ -62,23 +86,25 @@ export default function Dashboard() {
     const [isTerminalOpen, setIsTerminalOpen] = useState(false);
 
     const fetchDashboardData = async (step: number) => {
+        setIsLoading(true);
         try {
+            // Thử gọi Django. Nếu sập hoặc chặn CORS, nó sẽ quăng lỗi văng xuống Catch.
             const response = await fetch(`http://127.0.0.1:8000/api/v1/dashboard/?step=${step}`);
-            if (!response.ok) throw new Error("Mất kết nối với Django!");
+            if (!response.ok) throw new Error("Django Offline");
             
             const result = await response.json();
             setData(result.data);
-            
+        } catch (error) {
+            // KÍCH HOẠT TÚI KHÍ: Dùng dữ liệu cứng
+            console.warn("Kích hoạt chế độ Offline/Fallback!");
+            setData(FALLBACK_FRAMES[step]);
+        } finally {
+            setIsLoading(false);
+            // Bắn thông báo kịch bản
             if (step === 0) toast.success("Hệ thống ổn định. Đang theo dõi thị trường.", {id: 'sim'});
             if (step === 1) toast("Phát hiện hưng phấn. OCI tăng cao.", { icon: '⚠️', id: 'sim' });
             if (step === 2) toast.error("FLASH CRASH DETECTED! Kích hoạt phanh.", {id: 'sim'});
             if (step === 3) toast("Đã đóng băng danh mục. Bảo toàn vốn.", { icon: '🛡️', id: 'sim' });
-
-        } catch (error) {
-            console.error(error);
-            toast.error("Radar nhiễu! Vui lòng bật Server Django.");
-        } finally {
-            setIsLoading(false);
         }
     };
 
@@ -112,11 +138,9 @@ export default function Dashboard() {
     const currentAUM = data?.aum || 0;
 
     return (
-        // Đã gắn overflow-y-auto và h-full để ép trang có thể cuộn mượt mà
         <div className="w-full h-full overflow-y-auto bg-slate-50 text-slate-900 p-2 md:p-3 lg:p-4 font-sans antialiased flex flex-col relative pb-20">
             <Toaster position="top-right" />
             
-            {/* --- BỘ ĐIỀU KHIỂN RẠP CHIẾU PHIM --- */}
             <div className="bg-white rounded-xl p-2.5 mb-3 flex items-center justify-between shadow-sm border-2 border-blue-100">
                 <div className="flex items-center flex-wrap gap-2 md:gap-3">
                     <button 
@@ -134,7 +158,6 @@ export default function Dashboard() {
                         Status: <span className={`ml-1 ${isPlaying ? 'text-rose-500 font-black animate-pulse' : 'text-blue-600 font-black'}`}>{isPlaying ? 'LIVE STRESS TEST' : 'STANDBY'}</span>
                     </div>
                     
-                    {/* NÚT VIEW CORE ALGORITHM SÁNG SỦA, NẰM CHUNG HÀNG */}
                     <button 
                         onClick={() => setIsTerminalOpen(true)}
                         className="ml-auto md:ml-2 flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 text-slate-700 rounded-lg text-[10px] font-black tracking-widest uppercase hover:bg-slate-100 hover:text-blue-600 transition-colors shadow-sm active:scale-95">
@@ -143,7 +166,6 @@ export default function Dashboard() {
                     </button>
                 </div>
 
-                {/* Thanh tiến trình */}
                 <div className="hidden md:flex items-center gap-1.5 ml-4">
                     {[0, 1, 2, 3].map((step) => (
                         <div key={step} className={`h-2 w-10 rounded-full transition-all duration-500 ${step <= currentStep ? 'bg-blue-500' : 'bg-slate-200'}`}></div>
@@ -151,7 +173,6 @@ export default function Dashboard() {
                 </div>
             </div>
             
-            {/* 1. HEADER */}
             <header className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 mb-3 flex flex-col md:flex-row justify-between items-center md:items-center gap-3 transition-all">
                 <div className="flex items-center gap-3">
                     <Target size={28} color={CORE_NODES[selectedNodeKey].color} />
@@ -173,9 +194,7 @@ export default function Dashboard() {
                 </div>
             </header>
 
-            {/* 2. MAIN GRID TRÊN (CHART & RISK) */}
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 mb-3">
-                {/* Chart chiếm 2 cột */}
                 <div className={`lg:col-span-2 bg-white rounded-xl shadow-sm border p-4 flex flex-col transition-all duration-500 ${currentStep >= 2 ? 'border-rose-400' : 'border-slate-200'}`}>
                     <h3 className="text-[10px] font-black text-slate-400 mb-2 tracking-widest uppercase">Institutional Equity Curve</h3>
                     <div className="h-48 md:h-64 w-full">
@@ -195,7 +214,6 @@ export default function Dashboard() {
                     </div>
                 </div>
 
-                {/* Enforcement Hub */}
                 <div className={`bg-white rounded-xl shadow-sm border p-4 flex flex-col transition-all duration-500 ${data.enforcementHub.systemLocks > 0 ? 'border-amber-400' : 'border-slate-200'}`}>
                     <h3 className="text-[10px] font-black text-slate-400 mb-3 tracking-widest uppercase">Risk Enforcement</h3>
                     <div className="flex-1 flex flex-col justify-center gap-3">
@@ -214,7 +232,6 @@ export default function Dashboard() {
                     </div>
                 </div>
 
-                {/* Diagnostics */}
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col relative overflow-hidden">
                     <div className={`absolute top-0 right-0 w-24 h-24 rounded-full blur-2xl -mr-6 -mt-6 pointer-events-none transition-colors ${currentStep >= 1 ? 'bg-rose-100' : 'bg-blue-50'}`}></div>
                     <h3 className="text-[10px] font-black text-blue-600 mb-3 tracking-widest uppercase relative z-10">Diagnostics Ver 1.0</h3>
@@ -235,7 +252,6 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            {/* 4. EXECUTION LOGS (6 LỆNH CHUẨN MỰC) */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
                 <div className="bg-slate-50 p-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-center">
                     <span className="font-black text-xs text-slate-700 tracking-widest uppercase">Live Audit Trail</span>
@@ -272,7 +288,6 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            {/* --- TERMINAL MODAL --- */}
             {isTerminalOpen && (
                 <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[100] flex items-center justify-center p-3 animate-fade-in" onClick={() => setIsTerminalOpen(false)}>
                     <div className="bg-[#1e1e1e] rounded-xl w-full max-w-3xl shadow-2xl border-t-8 border-slate-700 overflow-hidden font-mono text-xs text-[#d4d4d4] animate-slide-in-bottom flex flex-col h-[80vh]" onClick={e => e.stopPropagation()}>
